@@ -458,7 +458,9 @@
 
   <div class="zoom" data-ui>
     <button class="znav" onclick={() => zoomBy(1 / 1.25)} aria-label="Zoom out">−</button>
-    <button class="zinfo" onclick={resetView} title="Reset view">{zoomPct}%</button>
+    <button class="zinfo" onclick={resetView} title="Reset to 100%"
+      ><span class="zval">{zoomPct}</span><span class="zpct">%</span></button
+    >
     <button class="znav" onclick={() => zoomBy(1.25)} aria-label="Zoom in">+</button>
   </div>
 </main>
@@ -565,6 +567,7 @@
     position: fixed;
     left: 22px;
     bottom: 22px;
+    z-index: 40;
     width: 54px;
     height: 54px;
     display: grid;
@@ -615,6 +618,7 @@
     position: fixed;
     left: 50%;
     bottom: 24px;
+    z-index: 40;
     transform: translateX(-50%);
     display: flex;
     gap: 12px;
@@ -655,6 +659,7 @@
     position: fixed;
     right: 22px;
     bottom: 24px;
+    z-index: 40;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -685,11 +690,24 @@
   .zinfo {
     height: 54px;
     border-radius: 999px;
-    padding: 0 20px;
-    font-size: 14px;
-    font-weight: 500;
+    padding: 0 18px;
+    min-width: 70px;
+    display: grid;
+    grid-auto-flow: column;
+    align-items: baseline;
+    justify-content: center;
+    gap: 1px;
+    font-size: 17px;
+    font-weight: 650;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    letter-spacing: 0.01em;
+  }
+  .zpct {
+    font-size: 13px;
+    font-weight: 600;
     color: var(--ink-soft);
-    min-width: 64px;
   }
   .znav:hover,
   .zinfo:hover {
