@@ -459,7 +459,9 @@
   <div class="zoom" data-ui>
     <button class="znav" onclick={() => zoomBy(1 / 1.25)} aria-label="Zoom out">−</button>
     <button class="zinfo" onclick={resetView} title="Reset to 100%"
-      ><span class="zval">{zoomPct}</span><span class="zpct">%</span></button
+      ><span class="zpct zghost" aria-hidden="true">%</span><span class="zval"
+        >{zoomPct}</span
+      ><span class="zpct">%</span></button
     >
     <button class="znav" onclick={() => zoomBy(1.25)} aria-label="Zoom in">+</button>
   </div>
@@ -708,6 +710,9 @@
     font-size: 13px;
     font-weight: 600;
     color: var(--ink-soft);
+  }
+  .zghost {
+    visibility: hidden;
   }
   .znav:hover,
   .zinfo:hover {
