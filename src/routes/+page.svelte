@@ -711,6 +711,7 @@
   .zinner {
     display: inline-flex;
     align-items: baseline;
+    transform: translateX(2px);
   }
   .zpct {
     margin-left: 1px;
