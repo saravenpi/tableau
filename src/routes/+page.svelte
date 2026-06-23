@@ -585,27 +585,27 @@
   }
   .trash.armed {
     opacity: 1;
-    transform: scale(1.07);
+    transform: scale(1.16);
     color: var(--ink);
-    box-shadow: 0 6px 20px rgba(40, 38, 32, 0.16);
+    box-shadow: 0 8px 24px rgba(40, 38, 32, 0.18);
   }
   .trash.hot {
     color: #e5484d;
     background: #ffeaea;
     border-color: rgba(229, 72, 77, 0.4);
-    transform: scale(1.18) rotate(-4deg);
-    box-shadow: 0 8px 24px rgba(229, 72, 77, 0.28);
+    transform: scale(1.34) rotate(-4deg);
+    box-shadow: 0 12px 30px rgba(229, 72, 77, 0.3);
   }
   .trash .lid {
     transition: transform 0.32s var(--ease-soft);
     transform-box: fill-box;
-    transform-origin: 86% 95%;
+    transform-origin: 100% 100%;
   }
   .trash.armed .lid {
-    transform: translateY(-1.2px) rotate(-16deg);
+    transform: rotate(14deg);
   }
   .trash.hot .lid {
-    transform: translateY(-2.5px) rotate(-26deg);
+    transform: translateY(-1.5px) rotate(26deg);
   }
 
   .palette {
