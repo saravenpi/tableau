@@ -308,14 +308,72 @@
     }, 300);
   });
 
-  const gridStyle = $derived.by(() => {
-    const s = board.camera.scale;
-    const dotR = Math.max(0.9, 1.4 * s);
-    return (
-      `background-position:${board.camera.x}px ${board.camera.y}px;` +
-      `background-size:${GRID * s}px ${GRID * s}px;` +
-      `--dot-r:${dotR}px;`
-    );
+  // ---- dotted grid (canvas, GPU-friendly: zoom is a pattern transform,
+  //      not a per-frame gradient re-rasterization, so it never shimmers) ----
+  let gridCanvas = $state<HTMLCanvasElement | null>(null);
+  let gridCtx: CanvasRenderingContext2D | null = null;
+  let dotTile: HTMLCanvasElement | null = null;
+  let dotPattern: CanvasPattern | null = null;
+  let dpr = 1;
+
+  function buildDotTile() {
+    const size = Math.max(1, Math.round(GRID * dpr));
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const g = c.getContext("2d")!;
+    const r = 1.4 * dpr;
+    const cx = size / 2;
+    const grad = g.createRadialGradient(cx, cx, 0, cx, cx, r + dpr);
+    grad.addColorStop(0, "rgba(40, 38, 32, 0.13)");
+    grad.addColorStop(r / (r + dpr), "rgba(40, 38, 32, 0.13)");
+    grad.addColorStop(1, "rgba(40, 38, 32, 0)");
+    g.fillStyle = grad;
+    g.beginPath();
+    g.arc(cx, cx, r + dpr, 0, Math.PI * 2);
+    g.fill();
+    dotTile = c;
+    dotPattern = null;
+  }
+
+  function resizeGrid() {
+    if (!gridCanvas) return;
+    dpr = window.devicePixelRatio || 1;
+    gridCanvas.width = Math.round(window.innerWidth * dpr);
+    gridCanvas.height = Math.round(window.innerHeight * dpr);
+    gridCanvas.style.width = window.innerWidth + "px";
+    gridCanvas.style.height = window.innerHeight + "px";
+    gridCtx = gridCanvas.getContext("2d");
+    buildDotTile();
+    drawGrid();
+  }
+
+  function drawGrid() {
+    const ctx = gridCtx;
+    if (!ctx || !gridCanvas || !dotTile) return;
+    if (!dotPattern) dotPattern = ctx.createPattern(dotTile, "repeat");
+    if (!dotPattern) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+    const m = new DOMMatrix();
+    m.translateSelf(board.camera.x * dpr, board.camera.y * dpr);
+    m.scaleSelf(board.camera.scale);
+    dotPattern.setTransform(m);
+    ctx.fillStyle = dotPattern;
+    ctx.fillRect(0, 0, gridCanvas.width, gridCanvas.height);
+  }
+
+  $effect(() => {
+    board.camera.x;
+    board.camera.y;
+    board.camera.scale;
+    if (gridCanvas) drawGrid();
+  });
+
+  onMount(() => {
+    resizeGrid();
+    window.addEventListener("resize", resizeGrid);
+    return () => window.removeEventListener("resize", resizeGrid);
   });
   const worldStyle = $derived(
     `transform:translate(${board.camera.x}px,${board.camera.y}px) scale(${board.camera.scale});`,
@@ -335,12 +393,12 @@
 <main
   class="viewport"
   class:panning
-  style={gridStyle}
   onwheel={onWheel}
   onpointerdown={onPointerDown}
   ondblclick={onDblClick}
   oncontextmenu={onContextMenu}
 >
+  <canvas bind:this={gridCanvas} class="grid"></canvas>
   <div class="world" style={worldStyle}>
     {#each board.notes as note (note.id)}
       <Postit
@@ -459,12 +517,15 @@
     inset: 0;
     overflow: hidden;
     background-color: var(--paper);
-    background-image: radial-gradient(
-      circle,
-      var(--dot) var(--dot-r, 1.4px),
-      transparent calc(var(--dot-r, 1.4px) + 0.4px)
-    );
     cursor: default;
+  }
+  .grid {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
   }
   .viewport.panning {
     cursor: grabbing;
@@ -473,6 +534,7 @@
     position: absolute;
     top: 0;
     left: 0;
+    z-index: 1;
     transform-origin: 0 0;
   }
 
