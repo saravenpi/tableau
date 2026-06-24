@@ -74,7 +74,10 @@ class Board {
   }
 
   async saveAsset(bytes: Uint8Array, ext: string): Promise<string> {
-    return invoke<string>("save_asset", { data: Array.from(bytes), ext });
+    // Pass the Uint8Array straight through: Tauri v2 transfers it as raw binary
+    // (received as Vec<u8>). Array.from() would box every byte into a JS number
+    // and JSON-serialise it — gigabytes of RAM for a large file, hence the crash.
+    return invoke<string>("save_asset", { data: bytes, ext });
   }
 
   remove(id: string): void {

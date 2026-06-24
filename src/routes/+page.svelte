@@ -45,6 +45,14 @@
   let lightboxOrigin = $state<DOMRect | null>(null);
   let lightboxSourceEl: HTMLElement | null = null;
 
+  let toast = $state<string | null>(null);
+  let toastTimer: ReturnType<typeof setTimeout>;
+  function showToast(msg: string) {
+    toast = msg;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toast = null), 4200);
+  }
+
   let dragNote: Note | null = null;
   let last = { x: 0, y: 0 };
   let raf: number | null = null;
@@ -166,6 +174,21 @@
   // tiles can label themselves. Backend just hashes bytes — type-agnostic.
   const randomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
 
+  // Cap intake: a whole file is read into memory before it hits disk, so an
+  // unbounded drop (a multi-GB .dmg/.iso) would exhaust RAM. Reject early with a
+  // visible message instead of crashing.
+  const MAX_ASSET_BYTES = 100 * 1024 * 1024;
+  const MB = (n: number) => Math.round(n / (1024 * 1024));
+
+  function acceptable(files: File[]): File[] {
+    const tooBig = files.filter((f) => f.size > MAX_ASSET_BYTES);
+    if (tooBig.length) {
+      const list = tooBig.map((f) => `${f.name} (${MB(f.size)} MB)`).join(", ");
+      showToast(`Too large to add — max ${MB(MAX_ASSET_BYTES)} MB: ${list}`);
+    }
+    return files.filter((f) => f.size <= MAX_ASSET_BYTES);
+  }
+
   function extOf(file: File): string {
     const dot = file.name.lastIndexOf(".");
     if (dot > 0) return file.name.slice(dot + 1);
@@ -186,7 +209,8 @@
     note.text = note.text ? `${note.text}\n${md}` : md;
   }
 
-  async function addAssetNotes(files: File[]) {
+  async function addAssetNotes(input: File[]) {
+    const files = acceptable(input);
     if (!files.length) return;
     const refs = await Promise.all(files.map(storeAsset));
     commitEdit();
@@ -246,7 +270,9 @@
     }
     if (!files.length) return; // no file -> let normal text paste run
     e.preventDefault();
-    const md = (await Promise.all(files.map(storeAsset))).join("\n");
+    const ok = acceptable(files);
+    if (!ok.length) return;
+    const md = (await Promise.all(ok.map(storeAsset))).join("\n");
     const editing = editingId && board.notes.find((n) => n.id === editingId);
     if (editing) {
       appendAssets(editing, md);
@@ -264,9 +290,11 @@
   }
 
   async function onDrop(e: DragEvent) {
-    const files = Array.from(e.dataTransfer?.files ?? []);
-    if (!files.length) return;
+    const dropped = Array.from(e.dataTransfer?.files ?? []);
+    if (!dropped.length) return;
     e.preventDefault();
+    const files = acceptable(dropped);
+    if (!files.length) return;
     const world = toWorld(e.clientX, e.clientY);
     const noteEl = (e.target as HTMLElement).closest(
       "[data-note]",
@@ -745,7 +773,29 @@
   />
 {/if}
 
+{#if toast}
+  <div class="toast liquid-glass" data-ui transition:fade={{ duration: 180 }}>
+    {toast}
+  </div>
+{/if}
+
 <style>
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 32px;
+    transform: translateX(-50%);
+    z-index: 120;
+    max-width: min(78vw, 560px);
+    padding: 12px 18px;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(40, 38, 32, 0.18);
+  }
+
   .titlebar {
     position: fixed;
     top: 0;
