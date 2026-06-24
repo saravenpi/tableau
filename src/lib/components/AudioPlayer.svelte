@@ -52,7 +52,12 @@
   }
 </script>
 
-<div class="player note-audio" style="--amp:{playing ? 1 : 0.14}">
+<div
+  class="player note-audio"
+  style="--amp:{playing ? 1 : 0.14}"
+  data-src={src}
+  data-name={name}
+>
   <div class="row">
     <button
       class="play audio-ctl"
@@ -85,11 +90,17 @@
     aria-valuemax="100"
     tabindex="-1"
   >
-    <svg class="wave bg" viewBox="0 0 {VB_W} 24" preserveAspectRatio="none">
-      <g class="amp"><path d={wavePath} vector-effect="non-scaling-stroke" /></g>
-    </svg>
-    <div class="fg" style="clip-path: inset(0 {100 - pct}% 0 0)">
-      <svg class="wave fg-wave" viewBox="0 0 {VB_W} 24" preserveAspectRatio="none">
+    <div class="layer bg" style="clip-path: inset(0 0 0 {pct}%)">
+      <svg class="wave" viewBox="0 0 {VB_W} 24" preserveAspectRatio="none">
+        <g class="amp">
+          <g class="travel">
+            <path d={wavePath} vector-effect="non-scaling-stroke" />
+          </g>
+        </g>
+      </svg>
+    </div>
+    <div class="layer fg" style="clip-path: inset(0 {100 - pct}% 0 0)">
+      <svg class="wave" viewBox="0 0 {VB_W} 24" preserveAspectRatio="none">
         <g class="amp">
           <g class="travel">
             <path d={wavePath} vector-effect="non-scaling-stroke" />
@@ -176,10 +187,9 @@
     cursor: pointer;
     touch-action: none;
   }
-  .fg {
+  .layer {
     position: absolute;
     inset: 0;
-    overflow: hidden;
   }
   .wave {
     position: absolute;
@@ -187,13 +197,15 @@
     width: 100%;
     height: 100%;
     fill: none;
-    stroke: var(--ink);
     stroke-width: 2.4;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  .wave.bg {
+  .layer.bg .wave {
     stroke: rgba(40, 38, 32, 0.28);
+  }
+  .layer.fg .wave {
+    stroke: var(--ink);
   }
   .amp {
     transform: scaleY(var(--amp));

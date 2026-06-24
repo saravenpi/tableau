@@ -96,13 +96,15 @@
     margin: 6px 0;
     border-radius: 12px;
     overflow: hidden;
-    background: #1c1b18;
     box-shadow: 0 1px 3px rgba(40, 38, 32, 0.18);
+    font-size: 0;
+    line-height: 0;
   }
   .note-media {
     display: block;
     width: 100%;
     height: auto;
+    object-fit: cover;
     -webkit-user-drag: none;
   }
 

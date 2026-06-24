@@ -1,36 +1,43 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import AudioPlayer from "./AudioPlayer.svelte";
 
   let {
     src,
     kind = "image",
+    name = "",
     origin = null,
     onclose,
   }: {
     src: string;
-    kind?: "image" | "video";
+    kind?: "image" | "video" | "audio";
+    name?: string;
     origin?: DOMRect | null;
     onclose: () => void;
   } = $props();
 
-  const DUR = 360;
+  const DUR = 380;
   const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+  // lighter than before, and animated from clear -> on over the same DUR as the
+  // hero so the blur ramps in progressively and lands exactly when it does.
+  const BLUR_ON = "blur(14px) saturate(140%)";
+  const BLUR_OFF = "blur(0px) saturate(100%)";
+  const DIM_ON = "rgba(40, 38, 32, 0.26)";
+  const DIM_OFF = "rgba(40, 38, 32, 0)";
 
   let rootEl = $state<HTMLDivElement | null>(null);
   let backdropEl = $state<HTMLDivElement | null>(null);
   let heroEl = $state<HTMLImageElement | HTMLVideoElement | null>(null);
+  let audioWrapEl = $state<HTMLDivElement | null>(null);
   let chromeEl = $state<HTMLDivElement | null>(null);
   let closing = false;
 
-  // custom video controls state
   let playing = $state(false);
   let cur = $state(0);
   let dur = $state(0);
   const pct = $derived(dur > 0 ? Math.min(100, (cur / dur) * 100) : 0);
 
-  // FLIP: the transform that maps the laid-out fullscreen hero back onto its
-  // on-canvas origin rect (translate centre→centre, scale to match). Measured
-  // live so it only runs once the hero has real dimensions.
+  // FLIP: maps the laid-out fullscreen hero back onto its on-canvas origin rect.
   function originTransform(): string | null {
     if (!origin || !heroEl) return null;
     const f = heroEl.getBoundingClientRect();
@@ -40,6 +47,13 @@
     const sx = origin.width / f.width;
     const sy = origin.height / f.height;
     return `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+  }
+
+  function blurFrames(from: { b: string; d: string }, to: { b: string; d: string }): Keyframe[] {
+    return [
+      { backdropFilter: from.b, webkitBackdropFilter: from.b, background: from.d },
+      { backdropFilter: to.b, webkitBackdropFilter: to.b, background: to.d },
+    ] as Keyframe[];
   }
 
   async function ready() {
@@ -56,14 +70,23 @@
     }
   }
 
-  // Only the backdrop and chrome fade; the hero purely transforms (FLIP), so it
-  // reads as one element flying out and back — never a cross-fade.
+  // Only the backdrop + chrome fade and the blur ramps in; the hero purely
+  // transforms (FLIP) so it reads as one element flying out, never a cross-fade.
   function animateOpen() {
     if (!rootEl) return;
     rootEl.style.opacity = "1";
-    const fade = [{ opacity: 0 }, { opacity: 1 }];
-    backdropEl?.animate(fade, { duration: DUR, easing: EASE });
-    chromeEl?.animate(fade, { duration: DUR, easing: EASE });
+    backdropEl?.animate(blurFrames({ b: BLUR_OFF, d: DIM_OFF }, { b: BLUR_ON, d: DIM_ON }), {
+      duration: DUR,
+      easing: EASE,
+    });
+    chromeEl?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: DUR, easing: EASE });
+    if (kind === "audio") {
+      audioWrapEl?.animate(
+        [{ opacity: 0, transform: "scale(0.92)" }, { opacity: 1, transform: "none" }],
+        { duration: DUR, easing: EASE },
+      );
+      return;
+    }
     const from = originTransform();
     if (from && heroEl) {
       heroEl.animate([{ transform: from }, { transform: "none" }], {
@@ -78,15 +101,24 @@
     closing = true;
     if (!rootEl) return onclose();
     if (heroEl instanceof HTMLVideoElement) heroEl.pause();
-    const to = originTransform();
     const opts = { duration: DUR, easing: EASE, fill: "forwards" as const };
-    backdropEl?.animate([{ opacity: 1 }, { opacity: 0 }], opts);
+    backdropEl?.animate(blurFrames({ b: BLUR_ON, d: DIM_ON }, { b: BLUR_OFF, d: DIM_OFF }), opts);
     chromeEl?.animate([{ opacity: 1 }, { opacity: 0 }], opts);
-    const heroAnim =
-      to && heroEl
-        ? heroEl.animate([{ transform: "none" }, { transform: to }], opts)
-        : backdropEl?.animate([{ opacity: 0 }], opts);
-    if (heroAnim) heroAnim.onfinish = () => onclose();
+
+    let anim: Animation | undefined;
+    if (kind === "audio") {
+      anim = audioWrapEl?.animate(
+        [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "scale(0.92)" }],
+        opts,
+      );
+    } else {
+      const to = originTransform();
+      anim =
+        to && heroEl
+          ? heroEl.animate([{ transform: "none" }, { transform: to }], opts)
+          : backdropEl?.animate([{ opacity: 1 }, { opacity: 0.999 }], opts);
+    }
+    if (anim) anim.onfinish = () => onclose();
     else onclose();
   }
 
@@ -138,23 +170,33 @@
 <div class="lightbox" bind:this={rootEl} data-ui onclick={close}>
   <div class="backdrop" bind:this={backdropEl}></div>
 
-  {#if kind === "video"}
-    <!-- svelte-ignore a11y_media_has_caption -->
-    <video
-      bind:this={heroEl}
-      class="hero"
-      {src}
-      autoplay
-      playsinline
-      draggable="false"
-      onclick={toggle}
-      onplay={() => (playing = true)}
-      onpause={() => (playing = false)}
-      onended={() => (playing = false)}
-      onloadedmetadata={() => (dur = (heroEl as HTMLVideoElement)?.duration ?? 0)}
-      ontimeupdate={() => (cur = (heroEl as HTMLVideoElement)?.currentTime ?? 0)}
-    ></video>
+  <div class="stage">
+    {#if kind === "video"}
+      <!-- svelte-ignore a11y_media_has_caption -->
+      <video
+        bind:this={heroEl}
+        class="hero"
+        {src}
+        autoplay
+        playsinline
+        draggable="false"
+        onclick={toggle}
+        onplay={() => (playing = true)}
+        onpause={() => (playing = false)}
+        onended={() => (playing = false)}
+        onloadedmetadata={() => (dur = (heroEl as HTMLVideoElement)?.duration ?? 0)}
+        ontimeupdate={() => (cur = (heroEl as HTMLVideoElement)?.currentTime ?? 0)}
+      ></video>
+    {:else if kind === "audio"}
+      <div class="audio-stage" bind:this={audioWrapEl} onclick={(e) => e.stopPropagation()}>
+        <AudioPlayer {src} {name} />
+      </div>
+    {:else}
+      <img bind:this={heroEl} class="hero" {src} alt="" draggable="false" />
+    {/if}
+  </div>
 
+  {#if kind === "video"}
     <div class="chrome" bind:this={chromeEl} onclick={(e) => e.stopPropagation()}>
       <button class="pp" onclick={toggle} aria-label={playing ? "Pause" : "Play"}>
         {#if playing}
@@ -182,8 +224,6 @@
       </div>
       <span class="time">{fmt(cur)} / {fmt(dur)}</span>
     </div>
-  {:else}
-    <img bind:this={heroEl} class="hero" {src} alt="" draggable="false" />
   {/if}
 </div>
 
@@ -194,38 +234,51 @@
     z-index: 100;
     opacity: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 56px;
+    padding: 48px;
     cursor: zoom-out;
   }
   .backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(40, 38, 32, 0.34);
-    -webkit-backdrop-filter: blur(22px) saturate(160%);
-    backdrop-filter: blur(22px) saturate(160%);
+    background: rgba(40, 38, 32, 0.26);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: blur(14px) saturate(140%);
+  }
+
+  .stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .hero {
-    position: relative;
     max-width: min(92vw, 1400px);
-    max-height: 86vh;
+    max-height: 100%;
     object-fit: contain;
     border-radius: 18px;
     box-shadow:
-      0 30px 80px rgba(0, 0, 0, 0.45),
+      0 30px 80px rgba(0, 0, 0, 0.4),
       0 0 0 1px rgba(255, 255, 255, 0.12);
     transform-origin: center center;
   }
   video.hero {
     cursor: pointer;
   }
+  .audio-stage {
+    position: relative;
+    width: min(560px, 86vw);
+  }
 
   .chrome {
-    position: fixed;
-    left: 50%;
-    bottom: 34px;
-    transform: translateX(-50%);
+    position: relative;
+    flex: 0 0 auto;
+    margin-top: 22px;
     display: flex;
     align-items: center;
     gap: 14px;
@@ -285,13 +338,5 @@
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     opacity: 0.8;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .backdrop,
-    .chrome,
-    .hero {
-      animation-duration: 0.01ms !important;
-    }
   }
 </style>

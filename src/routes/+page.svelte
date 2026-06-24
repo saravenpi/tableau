@@ -40,7 +40,8 @@
   } | null>(null);
   let pasteImage: Image | null = null;
   let lightbox = $state<string | null>(null);
-  let lightboxKind = $state<"image" | "video">("image");
+  let lightboxKind = $state<"image" | "video" | "audio">("image");
+  let lightboxName = $state("");
   let lightboxOrigin = $state<DOMRect | null>(null);
   let lightboxSourceEl: HTMLElement | null = null;
 
@@ -440,7 +441,9 @@
     const video = target?.closest(".note-media") as HTMLVideoElement | null;
     if (video) return openLightbox(video, "video");
 
-    if (target?.closest(".note-audio")) return; // audio drives its own controls
+    const audio = target?.closest(".note-audio") as HTMLElement | null;
+    if (audio) return openAudioLightbox(audio);
+
     if (isAssetOnly(note.text)) return; // bare media with no hit — nothing to do
 
     board.bringToFront(note);
@@ -474,8 +477,21 @@
     // of the source peeks out from behind the flying hero mid-transition.
     lightboxSourceEl = (el.closest(".vplayer") as HTMLElement) ?? el;
     lightboxKind = kind;
+    lightboxName = "";
     lightboxSourceEl.style.visibility = "hidden";
     lightbox = el instanceof HTMLImageElement ? el.currentSrc || el.src : el.src;
+  }
+
+  // Audio has no shared visual to FLIP, so its fullscreen viewer scale-fades a
+  // big player in. We read src/name off the card's data-* and pause the inline one.
+  function openAudioLightbox(el: HTMLElement) {
+    (el.querySelector("audio") as HTMLAudioElement | null)?.pause();
+    lightboxOrigin = el.getBoundingClientRect();
+    lightboxSourceEl = el;
+    lightboxKind = "audio";
+    lightboxName = el.dataset.name ?? "";
+    el.style.visibility = "hidden";
+    lightbox = el.dataset.src ?? "";
   }
 
   function closeLightbox() {
@@ -722,6 +738,7 @@
   <Lightbox
     src={lightbox}
     kind={lightboxKind}
+    name={lightboxName}
     origin={lightboxOrigin}
     onclose={closeLightbox}
   />
