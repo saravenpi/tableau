@@ -259,12 +259,19 @@
   .text :global(del) {
     opacity: 0.6;
   }
-  .text :global(ul),
+  .text :global(ul) {
+    list-style: none;
+    padding-left: 0;
+  }
   .text :global(ol) {
-    padding-left: 1.3em;
+    padding-left: 1.4em;
   }
   .text :global(li) {
     margin: 0.12em 0;
+  }
+  .text :global(ul > li) {
+    position: relative;
+    padding-left: 1.5em;
   }
   .text :global(code) {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -298,24 +305,60 @@
     margin: 0.6em 0;
   }
 
-  /* task lists: drop the bullet, sit the live checkbox beside its line */
-  .text :global(li:has(.md-task)) {
-    list-style: none;
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5em;
-    margin-left: -1.05em;
+  /* Unified list markers. Plain bullets and task checkboxes share the same
+     gutter (li padding-left: 1.5em) and the same center, so a `-` row and a
+     `- [ ]` row line up exactly. Native bullets are off (browser positions them
+     opaquely and they never match a custom box), replaced by a drawn dot.
+     Vertical: line-height 1.45em, so a 1.05em box sits at top (1.45-1.05)/2 =
+     0.2em and a 0.34em dot at (1.45-0.34)/2 ≈ 0.55em — both centered on line 1.
+     Horizontal: box left 0.1em (center 0.625em), dot left 0.46em (center 0.63em). */
+  .text :global(ul > li:not(:has(.md-task)))::before {
+    content: "";
+    position: absolute;
+    left: 0.46em;
+    top: 0.55em;
+    width: 0.34em;
+    height: 0.34em;
+    border-radius: 50%;
+    background: #1f1d19;
   }
   .text :global(.md-task) {
-    flex: 0 0 auto;
-    margin: 0.26em 0 0;
-    width: 0.95em;
-    height: 0.95em;
+    appearance: none;
+    -webkit-appearance: none;
+    position: absolute;
+    /* form controls don't inherit font-size, so without this the box's `em`
+       units resolve against the UA default (~13px), not the note's 19px —
+       which shrank it and threw off both axes. */
+    font-size: inherit;
+    left: 0.18em;
+    top: 0.275em;
+    width: 0.9em;
+    height: 0.9em;
+    margin: 0;
+    border: 1.6px solid #1f1d19;
+    border-radius: 50%;
+    background: none;
     cursor: pointer;
-    accent-color: var(--ink);
+  }
+  .text :global(.md-task:checked) {
+    border-color: var(--ink-soft);
+  }
+  .text :global(.md-task:checked)::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 47%;
+    width: 0.24em;
+    height: 0.46em;
+    border: solid var(--ink-soft);
+    border-width: 0 1.7px 1.7px 0;
+    transform: translate(-50%, -58%) rotate(45deg);
   }
   .text :global(li:has(.md-task:checked)) {
     color: var(--ink-soft);
+    text-decoration: line-through;
+  }
+  .text :global(li:has(.md-task:checked) *) {
     text-decoration: line-through;
   }
 
