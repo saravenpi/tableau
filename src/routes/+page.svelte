@@ -1026,7 +1026,8 @@
         else enterDraw();
         return;
       }
-      // T new text note, F pick a file — only from the normal canvas
+      // T new text note, F pick a file, 1–6 a colored note — normal canvas only.
+      // 1–6 require NO Shift, so ⇧1/⇧2 stay reserved for zoom-to-fit.
       if (!e.repeat && mode === "normal") {
         if (e.key === "t" || e.key === "T") {
           e.preventDefault();
@@ -1036,6 +1037,12 @@
         if (e.key === "f" || e.key === "F") {
           e.preventDefault();
           attach?.open();
+          return;
+        }
+        const swatch = !e.shiftKey && /^(?:Digit|Numpad)([1-6])$/.exec(e.code);
+        if (swatch) {
+          e.preventDefault();
+          addNote(COLORS[Number(swatch[1]) - 1]);
           return;
         }
       }

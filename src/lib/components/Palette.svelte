@@ -10,10 +10,9 @@
     <button
       class="swatch"
       style="--c:{color}; animation-delay:{i * 40}ms"
-      title="Add note"
       aria-label="Add note"
       onclick={() => onpick(color)}
-    ></button>
+    >{#if i < 9}<span class="tip">New note <kbd>{i + 1}</kbd></span>{/if}</button>
   {/each}
 </div>
 
@@ -25,6 +24,7 @@
     border-radius: 999px;
   }
   .swatch {
+    position: relative;
     width: 30px;
     height: 30px;
     border-radius: 50%;
