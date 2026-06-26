@@ -9,7 +9,8 @@
     type AssetKind,
   } from "../assets";
   import { renderMarkdown, toggleTask } from "../markdown";
-  import type { Note } from "../board.svelte";
+  import { FONT_STACKS } from "../fonts";
+  import { TEXT_COLOR, type Note } from "../board.svelte";
 
   let {
     note,
@@ -55,6 +56,11 @@
   // A note that is nothing but asset refs sheds the colored card and renders as
   // its own asset component. Notes with prose keep the sticky card.
   const assetOnly = $derived(isAssetOnly(note.text));
+  // A "text" note (added via the Tt button) carries a transparent color so it
+  // renders as free text on the canvas — no sticky card. Its typeface is the
+  // note's font; sticky notes keep the default sans.
+  const textNote = $derived(note.color === TEXT_COLOR);
+  const fontFamily = $derived(FONT_STACKS[note.font ?? "sans"] ?? FONT_STACKS.sans);
 
   const fileName = (label: string, raw: string) =>
     label.trim() || (raw.split("/").pop() ?? raw);
@@ -98,8 +104,9 @@
   class:dimmed
   class:focused
   class:asset-only={assetOnly && !editing}
+  class:text-note={textNote}
   data-note={note.id}
-  style="left:{note.x}px; top:{note.y}px; width:{note.w}px; height:{note.h}px; z-index:{note.z}; --bg:{note.color}"
+  style="left:{note.x}px; top:{note.y}px; width:{note.w}px; height:{note.h}px; z-index:{note.z}; --bg:{note.color}; --family:{fontFamily}"
   in:scale={{ duration: 280, start: 0.82, opacity: 0, easing: cubicOut }}
   out:scale={{ duration: 200, start: 0.78, opacity: 0, easing: cubicOut }}
 >
@@ -199,12 +206,28 @@
     filter: drop-shadow(0 22px 48px rgba(40, 38, 32, 0.34));
   }
 
+  /* text note: free text on the canvas — no card, no shadow, no hover lift.
+     While editing it gets a faint sheet so you can see what you're typing in. */
+  .note.text-note .inner {
+    background: transparent;
+    box-shadow: none;
+  }
+  .note.text-note:hover .inner {
+    transform: none;
+    box-shadow: none;
+  }
+  .note.text-note.editing .inner {
+    transform: scale(1.015);
+    background: rgba(255, 255, 255, 0.45);
+    box-shadow: 0 10px 28px rgba(40, 38, 32, 0.14);
+  }
+
 
   .text,
   textarea {
     width: 100%;
     height: 100%;
-    font-family: inherit;
+    font-family: var(--family, inherit);
     font-size: 19px;
     line-height: 1.45;
     font-weight: 500;

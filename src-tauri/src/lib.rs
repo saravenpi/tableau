@@ -23,6 +23,8 @@ struct Note {
     z: f64,
     #[serde(default)]
     text: String,
+    #[serde(default)]
+    font: Option<String>,
 }
 
 // Written to disk: pure layout metadata. The filename is the note's identity.
@@ -34,6 +36,8 @@ struct FrontMatter {
     h: f64,
     color: String,
     z: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    font: Option<String>,
 }
 
 // Read from disk: every field optional, so hand-written / partial notes still parse.
@@ -45,6 +49,7 @@ struct PartialFm {
     h: Option<f64>,
     color: Option<String>,
     z: Option<f64>,
+    font: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -149,6 +154,7 @@ fn note_to_md(n: &Note) -> String {
         h: n.h,
         color: n.color.clone(),
         z: n.z,
+        font: n.font.clone(),
     };
     let yaml = serde_yaml::to_string(&fm).unwrap_or_default();
     format!("---\n{}---\n{}\n", yaml, n.text)
@@ -208,6 +214,7 @@ fn build_note(id: String, fm: PartialFm, body: String, state: &SyncState) -> Not
         color,
         z,
         text: body,
+        font: fm.font,
     }
 }
 
@@ -288,6 +295,20 @@ fn delete_note(id: String, state: State<Arc<SyncState>>) -> Result<(), String> {
     Ok(())
 }
 
+// Freehand drawing lives in one JSON blob beside the notes. It's a dotfile and
+// not a .md, so the watcher ignores it and it never shows up as a note.
+#[tauri::command]
+fn load_strokes(state: State<Arc<SyncState>>) -> Result<String, String> {
+    let path = state.folder.join(".toile-drawing.json");
+    Ok(std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".to_string()))
+}
+
+#[tauri::command]
+fn save_strokes(data: String, state: State<Arc<SyncState>>) -> Result<(), String> {
+    let path = state.folder.join(".toile-drawing.json");
+    std::fs::write(&path, data).map_err(|e| e.to_string())
+}
+
 fn handle_fs_event(handle: &AppHandle, state: &Arc<SyncState>, paths: Vec<PathBuf>) {
     for path in paths {
         if !is_md(&path) {
@@ -333,6 +354,8 @@ pub fn run() {
             init_board,
             write_note,
             delete_note,
+            load_strokes,
+            save_strokes,
             save_asset
         ])
         .setup(|app| {

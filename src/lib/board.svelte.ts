@@ -8,10 +8,24 @@ export type Note = {
   h: number;
   color: string;
   text: string;
+  font?: FontKey;
   z: number;
 };
 
+export type FontKey = "sans" | "serif" | "mono";
+
+// A committed drawing stroke: the already-smoothed SVG path `d`, in world
+// coordinates, plus its ink. Width is in world units so it scales with zoom.
+export type Stroke = { id: string; color: string; width: number; d: string };
+
+// One undoable drawing action: a pen stroke added, or a batch of strokes erased
+// in a single eraser gesture (so one drag = one undo).
+type StrokeOp = { type: "add" | "erase"; strokes: Stroke[] };
+
 export type Camera = { x: number; y: number; scale: number };
+
+// A transparent color is the marker for a cardless "text" note (no sticky card).
+export const TEXT_COLOR = "transparent";
 
 export const COLORS = [
   "#ffe8a3", // butter
@@ -34,9 +48,13 @@ function uid(): string {
 
 class Board {
   notes = $state<Note[]>([]);
+  strokes = $state<Stroke[]>([]);
   camera = $state<Camera>({ x: 0, y: 0, scale: 1 });
   folder = $state("");
   #zTop = 1;
+  #undo = $state<StrokeOp[]>([]);
+  #redo = $state<StrokeOp[]>([]);
+  #strokeTimer: ReturnType<typeof setTimeout> | undefined;
 
   async init(): Promise<void> {
     if (typeof localStorage !== "undefined") {
@@ -55,9 +73,15 @@ class Board {
     } catch (e) {
       console.error("init_board failed", e);
     }
+    try {
+      const parsed = JSON.parse(await invoke<string>("load_strokes"));
+      if (Array.isArray(parsed?.strokes)) this.strokes = parsed.strokes;
+    } catch {
+      /* no drawing yet */
+    }
   }
 
-  add(color: string, worldX: number, worldY: number, text = ""): Note {
+  add(color: string, worldX: number, worldY: number, text = "", font?: FontKey): Note {
     const note: Note = {
       id: uid(),
       x: worldX - NOTE_SIZE / 2,
@@ -66,11 +90,81 @@ class Board {
       h: NOTE_SIZE,
       color,
       text,
+      font,
       z: ++this.#zTop,
     };
     this.notes.push(note);
     this.writeNote(note.id);
     return note;
+  }
+
+  // ---- drawing ----
+  get canUndo(): boolean {
+    return this.#undo.length > 0;
+  }
+  get canRedo(): boolean {
+    return this.#redo.length > 0;
+  }
+
+  addStroke(d: string, color: string, width: number): void {
+    if (!d) return;
+    const s: Stroke = { id: uid(), color, width, d };
+    this.strokes.push(s);
+    this.#undo.push({ type: "add", strokes: [s] });
+    this.#redo = []; // a fresh action invalidates the redo branch
+    this.#saveStrokes();
+  }
+
+  // Pull the given strokes out immediately (live erase feedback), no history —
+  // the caller batches a whole eraser gesture and records it via commitErase.
+  removeStrokes(ids: Set<string>): Stroke[] {
+    if (!ids.size) return [];
+    const removed = this.strokes.filter((s) => ids.has(s.id));
+    if (removed.length) {
+      this.strokes = this.strokes.filter((s) => !ids.has(s.id));
+      this.#saveStrokes();
+    }
+    return removed;
+  }
+
+  commitErase(removed: Stroke[]): void {
+    if (!removed.length) return;
+    this.#undo.push({ type: "erase", strokes: removed });
+    this.#redo = [];
+  }
+
+  #apply(op: StrokeOp, forward: boolean): void {
+    const adding = (op.type === "add") === forward;
+    if (adding) {
+      this.strokes.push(...op.strokes);
+    } else {
+      const ids = new Set(op.strokes.map((s) => s.id));
+      this.strokes = this.strokes.filter((s) => !ids.has(s.id));
+    }
+  }
+
+  undoStroke(): void {
+    const op = this.#undo.pop();
+    if (!op) return;
+    this.#apply(op, false);
+    this.#redo.push(op);
+    this.#saveStrokes();
+  }
+
+  redoStroke(): void {
+    const op = this.#redo.pop();
+    if (!op) return;
+    this.#apply(op, true);
+    this.#undo.push(op);
+    this.#saveStrokes();
+  }
+
+  #saveStrokes(): void {
+    clearTimeout(this.#strokeTimer);
+    const snapshot = JSON.stringify({ strokes: this.strokes });
+    this.#strokeTimer = setTimeout(() => {
+      invoke("save_strokes", { data: snapshot }).catch(() => {});
+    }, 400);
   }
 
   async saveAsset(bytes: Uint8Array, ext: string): Promise<string> {
