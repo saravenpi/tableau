@@ -149,7 +149,7 @@
             {#if seg.kind === "image"}
               <img class="note-img" src={seg.src} alt={seg.alt} draggable="false" />
             {:else if seg.kind === "link"}
-              <LinkCard url={seg.url} />
+              <LinkCard url={seg.url} width={cardOnly ? note.w : note.w - 36} />
             {:else if seg.kind === "text"}{@html renderMarkdown(seg.value)}{:else}
               <AssetTile kind={seg.kind} raw={seg.raw} name={seg.name} {focused} />
             {/if}

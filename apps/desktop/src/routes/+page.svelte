@@ -1299,7 +1299,11 @@
   const panStyle = $derived(
     `transform:translate(${board.camera.x}px,${board.camera.y}px);`,
   );
-  const worldStyle = $derived(`transform:scale(${board.camera.scale});`);
+  const worldStyle = $derived(
+    board.camera.scale >= 1
+      ? `zoom:${board.camera.scale};`
+      : `transform:scale(${board.camera.scale});`,
+  );
   const zoomPct = $derived(Math.round(board.camera.scale * 100));
   const spotlightId =$derived(focusedId ?? editingId);
   const menuAssetOnly = $derived(

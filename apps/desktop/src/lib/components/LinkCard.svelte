@@ -5,7 +5,7 @@
   import { links } from "../links.svelte";
   import { youtubeId, safeExternal, hostOf } from "../links";
 
-  let { url }: { url: string } = $props();
+  let { url, width = 0 }: { url: string; width?: number } = $props();
 
   const vid = $derived(youtubeId(url));
 
@@ -20,22 +20,9 @@
 
   let playing = $state(false);
 
-  let ytEl = $state<HTMLDivElement | null>(null);
-  let fw = $state(0);
-  let fh = $state(0);
-  $effect(() => {
-    const el = ytEl;
-    if (!el) return;
-    const measure = () => {
-      fw = el.clientWidth;
-      fh = el.clientHeight;
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  });
-  const frameStyle = $derived(fw ? `width:${fw}px;height:${fh}px;` : "");
+  const frameStyle = $derived(
+    width ? `width:${width}px;height:${Math.round((width * 9) / 16)}px;` : "",
+  );
 
   $effect(() => {
     void url;
@@ -66,7 +53,6 @@
 {#if vid}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
-    bind:this={ytEl}
     class="link yt"
     class:playing
     data-link={url}
