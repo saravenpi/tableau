@@ -1,28 +1,10 @@
 # Toile
 
-An infinite canvas for sticky notes. Pan, zoom, drop colored notes anywhere, and drag them off when you're done. A small native desktop app built with Tauri + SvelteKit.
+A calm infinite canvas where your notes live as plain markdown files.
 
-Paste (`⌘V`) or drag an image onto the canvas to pin it — onto a note to add it there, or onto empty space to spawn a new note. Images are saved next to your notes under `assets/` and referenced as plain markdown (`![](assets/…)`), so your notes stay portable and Obsidian-readable.
+## Monorepo
 
-## Develop
+- `apps/desktop` — the Toile desktop app (Tauri + SvelteKit). `cd apps/desktop && bun install && bun run tauri dev`.
+- `apps/web` — the marketing site ([toile.facile.studio](https://toile.facile.studio)), a static landing page with macOS download links.
 
-```bash
-bun install
-bun run tauri dev
-```
-
-## Build
-
-```bash
-bun run tauri build
-```
-
-Bundles land in `src-tauri/target/release/bundle/`.
-
-## Stack
-
-Tauri 2 · SvelteKit (Svelte 5 runes) · TypeScript
-
-## License
-
-MIT
+Made by [Facile](https://facile.studio).

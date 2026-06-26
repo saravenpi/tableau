@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Toile — a calm infinite canvas for your notes</title>
+    <meta
+      name="description"
+      content="Toile is a calm infinite canvas where your notes live as plain markdown files. Sticky notes, drawings, media, and links on one endless sheet."
+    />
+    <meta property="og:title" content="Toile" />
+    <meta
+      property="og:description"
+      content="A calm infinite canvas where your notes live as plain markdown files."
+    />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="favicon.png" />
+    <style>
+      :root {
+        --paper: #f7f6f2;
+        --ink: #43413b;
+        --ink-soft: #8a877e;
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
+        --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+        --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui,
+          sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        font-family: var(--sans);
+        color: var(--ink);
+        background-color: var(--paper);
+        background-image: radial-gradient(
+          rgba(67, 65, 59, 0.13) 1.3px,
+          transparent 1.3px
+        );
+        background-size: 26px 26px;
+        background-position: -13px -13px;
+        min-height: 100vh;
+        -webkit-font-smoothing: antialiased;
+        line-height: 1.5;
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 26px 0;
+      }
+      .brand {
+        font-family: var(--serif);
+        font-size: 26px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+      .brand .dot {
+        color: #e9a23b;
+      }
+      .ghlink {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--ink-soft);
+        text-decoration: none;
+        transition: color 0.2s ease;
+      }
+      .ghlink:hover {
+        color: var(--ink);
+      }
+
+      .hero {
+        text-align: center;
+        padding: 64px 0 28px;
+      }
+      .pills {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 30px;
+      }
+      .pill {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        box-shadow:
+          inset 0 0 0 1px rgba(40, 38, 32, 0.06),
+          0 2px 5px rgba(40, 38, 32, 0.12);
+        animation: pop 0.5s var(--ease) both;
+      }
+      .pill:nth-child(1) {
+        background: #ffe8a3;
+        animation-delay: 0.02s;
+      }
+      .pill:nth-child(2) {
+        background: #ffc9c9;
+        animation-delay: 0.08s;
+      }
+      .pill:nth-child(3) {
+        background: #c9e8ca;
+        animation-delay: 0.14s;
+      }
+      .pill:nth-child(4) {
+        background: #bfe0f2;
+        animation-delay: 0.2s;
+      }
+      .pill:nth-child(5) {
+        background: #e2cdf2;
+        animation-delay: 0.26s;
+      }
+      .pill:nth-child(6) {
+        background: #ffd6b0;
+        animation-delay: 0.32s;
+      }
+      @keyframes pop {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.6);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      h1 {
+        font-family: var(--serif);
+        font-size: clamp(46px, 9vw, 86px);
+        font-weight: 600;
+        line-height: 1.02;
+        letter-spacing: -0.01em;
+      }
+      .tag {
+        font-size: clamp(17px, 2.4vw, 21px);
+        color: var(--ink-soft);
+        max-width: 30ch;
+        margin: 20px auto 0;
+      }
+
+      .downloads {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        justify-content: center;
+        margin-top: 38px;
+      }
+      .dl {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        padding: 15px 22px;
+        border-radius: 16px;
+        text-decoration: none;
+        color: var(--paper);
+        background: var(--ink);
+        box-shadow: 0 8px 24px rgba(40, 38, 32, 0.18);
+        transition:
+          transform 0.18s var(--ease),
+          box-shadow 0.18s ease;
+      }
+      .dl:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 14px 32px rgba(40, 38, 32, 0.24);
+      }
+      .dl:active {
+        transform: translateY(0) scale(0.98);
+      }
+      .dl.alt {
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.7);
+        box-shadow:
+          inset 0 0 0 1px rgba(40, 38, 32, 0.14),
+          0 6px 18px rgba(40, 38, 32, 0.1);
+      }
+      .dl svg {
+        flex: 0 0 auto;
+      }
+      .dl .lbl {
+        text-align: left;
+        line-height: 1.2;
+      }
+      .dl .lbl b {
+        display: block;
+        font-size: 16px;
+        font-weight: 650;
+      }
+      .dl .lbl span {
+        font-size: 12px;
+        opacity: 0.7;
+      }
+      .req {
+        margin-top: 16px;
+        font-size: 13px;
+        color: var(--ink-soft);
+      }
+
+      .shot {
+        margin: 60px auto 0;
+        max-width: 880px;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow:
+          inset 0 0 0 1px rgba(40, 38, 32, 0.1),
+          0 24px 60px rgba(40, 38, 32, 0.16);
+        background: #fff;
+        aspect-ratio: 16 / 10;
+        display: grid;
+        place-items: center;
+        color: var(--ink-soft);
+        font-size: 14px;
+      }
+      .shot img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 22px;
+        padding: 84px 0 40px;
+      }
+      .feat h3 {
+        font-family: var(--serif);
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      .feat p {
+        font-size: 15px;
+        color: var(--ink-soft);
+      }
+
+      footer {
+        text-align: center;
+        padding: 60px 0 50px;
+        font-size: 13px;
+        color: var(--ink-soft);
+      }
+      footer a {
+        color: var(--ink-soft);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="brand">Toile<span class="dot">.</span></div>
+        <a class="ghlink" href="https://github.com/FacileStudio/Toile">GitHub ↗</a>
+      </header>
+
+      <section class="hero">
+        <div class="pills" aria-hidden="true">
+          <span class="pill"></span><span class="pill"></span
+          ><span class="pill"></span><span class="pill"></span
+          ><span class="pill"></span><span class="pill"></span>
+        </div>
+        <h1>An infinite canvas<br />for a calmer mind.</h1>
+        <p class="tag">
+          Sticky notes, drawings, media and links on one endless sheet — and
+          every note lives as a plain markdown file you own.
+        </p>
+
+        <div class="downloads">
+          <a class="dl" href="downloads/Toile-aarch64.dmg" download>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M16.5 3c.1 1.2-.4 2.3-1.1 3.1-.7.8-1.9 1.5-3 1.4-.1-1.1.4-2.3 1.1-3 .7-.8 2-1.4 3-1.5zM19.6 16.9c-.5 1.2-.8 1.7-1.5 2.8-1 1.5-2.4 3.4-4.1 3.4-1.5 0-1.9-1-4-1-2 0-2.5 1-4 1-1.7 0-3-1.7-4-3.2-2.8-4.2-3.1-9.2-1.4-11.8 1.2-1.9 3.1-3 4.9-3 1.8 0 3 1 4.5 1 1.5 0 2.4-1 4.5-1 1.6 0 3.3.9 4.5 2.4-4 2.2-3.3 7.9.1 9.6z"
+              />
+            </svg>
+            <span class="lbl"><b>Download for Mac</b><span>Apple Silicon · .dmg</span></span>
+          </a>
+          <a class="dl alt" href="downloads/Toile-x64.dmg" download>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M16.5 3c.1 1.2-.4 2.3-1.1 3.1-.7.8-1.9 1.5-3 1.4-.1-1.1.4-2.3 1.1-3 .7-.8 2-1.4 3-1.5zM19.6 16.9c-.5 1.2-.8 1.7-1.5 2.8-1 1.5-2.4 3.4-4.1 3.4-1.5 0-1.9-1-4-1-2 0-2.5 1-4 1-1.7 0-3-1.7-4-3.2-2.8-4.2-3.1-9.2-1.4-11.8 1.2-1.9 3.1-3 4.9-3 1.8 0 3 1 4.5 1 1.5 0 2.4-1 4.5-1 1.6 0 3.3.9 4.5 2.4-4 2.2-3.3 7.9.1 9.6z"
+              />
+            </svg>
+            <span class="lbl"><b>Download for Mac</b><span>Intel · .dmg</span></span>
+          </a>
+        </div>
+        <p class="req">macOS 11 Big Sur or later · free &amp; open source</p>
+
+        <div class="shot">
+          <img src="screenshot.png" alt="Toile canvas" onerror="this.parentNode.textContent='your canvas, your way'" />
+        </div>
+      </section>
+
+      <section class="features">
+        <div class="feat">
+          <h3>Plain markdown</h3>
+          <p>
+            Every note is a real <code>.md</code> file in a folder you choose.
+            Read and edit them anywhere — Obsidian, your editor, your phone.
+          </p>
+        </div>
+        <div class="feat">
+          <h3>Think in space</h3>
+          <p>
+            Pan an endless canvas, drop notes anywhere, draw freehand, and pull
+            everything together with a marquee.
+          </p>
+        </div>
+        <div class="feat">
+          <h3>Everything on it</h3>
+          <p>
+            Images, audio, video and link previews live inline — a single calm
+            sheet for whatever you're working through.
+          </p>
+        </div>
+      </section>
+
+      <footer>
+        Made by <a href="https://facile.studio">Facile</a> · Toile is free and
+        open source on
+        <a href="https://github.com/FacileStudio/Toile">GitHub</a>.
+      </footer>
+    </div>
+  </body>
+</html>

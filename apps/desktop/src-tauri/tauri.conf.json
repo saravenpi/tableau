@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Toile",
+  "version": "0.1.0",
+  "identifier": "dev.saravenpi.toile",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Toile",
+        "width": 1280,
+        "height": 832,
+        "minWidth": 640,
+        "minHeight": 480,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "backgroundColor": "#f7f6f2",
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: asset: http://asset.localhost https://asset.localhost http://ipc.localhost ipc: https: ws: wss:; media-src 'self' asset: http://asset.localhost https://asset.localhost blob: data: https:; img-src 'self' asset: http://asset.localhost https://asset.localhost blob: data: https:; frame-src 'self' http://127.0.0.1:* http://localhost:* https://www.youtube-nocookie.com https://www.youtube.com; object-src 'none'",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$HOME/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
