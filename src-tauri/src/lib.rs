@@ -119,16 +119,10 @@ fn folder_from_config(path: &Path) -> Option<PathBuf> {
 fn load_config_folder() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let cfg = home.join(".toile.yml");
-    let legacy_cfg = home.join(".tableau.yml");
     let default_folder = home.join("Toile");
 
     if cfg.exists() {
         return folder_from_config(&cfg).unwrap_or(default_folder);
-    }
-    // Pre-rename installs kept their board under `.tableau.yml` / ~/Tableau —
-    // honor it so existing notes keep loading without anyone moving a folder.
-    if legacy_cfg.exists() {
-        return folder_from_config(&legacy_cfg).unwrap_or_else(|| home.join("Tableau"));
     }
 
     let template = format!(
