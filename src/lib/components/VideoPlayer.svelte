@@ -1,4 +1,6 @@
 <script lang="ts">
+  import WaveformScrubber from "./WaveformScrubber.svelte";
+
   let {
     src,
     onfail,
@@ -36,6 +38,12 @@
     if (!v || !dur) return;
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     v.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur;
+  }
+
+  function scrub(frac: number) {
+    const v = video;
+    if (!v || !dur) return;
+    v.currentTime = frac * dur;
   }
 </script>
 
@@ -86,6 +94,41 @@
     tabindex="-1"
   >
     <span class="vfill" style="width:{pct}%"></span>
+  </div>
+
+  <div
+    class="under-bar vid-ctl"
+    class:open={focused}
+    onpointerdown={(e) => e.stopPropagation()}
+    aria-hidden={!focused}
+  >
+    <button
+      class="ubtn"
+      onclick={toggle}
+      onpointerdown={(e) => e.stopPropagation()}
+      aria-label={playing ? "Pause" : "Play"}
+      tabindex={focused ? 0 : -1}
+    >
+      {#if playing}
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+          <rect x="6" y="5" width="4" height="14" rx="1" />
+          <rect x="14" y="5" width="4" height="14" rx="1" />
+        </svg>
+      {:else}
+        <svg
+          class="tri"
+          viewBox="0 0 24 24"
+          width="22"
+          height="22"
+          fill="currentColor"
+        >
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      {/if}
+    </button>
+    <div class="uwave">
+      <WaveformScrubber {pct} {playing} onseek={scrub} />
+    </div>
   </div>
 </div>
 
@@ -175,11 +218,74 @@
     box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
   }
   .vplayer.playing .vbar,
-  .vplayer:hover .vbar,
-  .vplayer.focused .vbar {
+  .vplayer:hover .vbar {
     opacity: 1;
   }
-  .vplayer.focused .vid-play {
+  .vplayer.focused .vid-play,
+  .vplayer.focused .vbar {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .under-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-height: 0;
+    padding: 0 6px;
+    font-size: 14px;
+    line-height: normal;
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+    overflow: hidden;
+    transition:
+      max-height 0.34s var(--ease-soft),
+      padding 0.34s var(--ease-soft),
+      opacity 0.26s var(--ease-soft),
+      transform 0.34s var(--ease-soft);
+  }
+  .under-bar.open {
+    max-height: 78px;
+    padding: 12px 8px 8px;
     opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .ubtn {
+    flex: 0 0 auto;
+    width: 50px;
+    height: 50px;
+    display: grid;
+    place-items: center;
+    border: none;
+    border-radius: 50%;
+    background: var(--ink);
+    color: #fff;
+    cursor: pointer;
+    transition: transform 0.16s var(--ease-soft);
+  }
+  .ubtn .tri {
+    margin-left: 1.5px;
+  }
+  .ubtn:hover {
+    transform: scale(1.07);
+  }
+  .ubtn:active {
+    transform: scale(0.92);
+  }
+  .uwave {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .under-bar {
+      transition: opacity 0.01s linear;
+      transform: none;
+    }
+    .under-bar.open {
+      transform: none;
+    }
   }
 </style>
