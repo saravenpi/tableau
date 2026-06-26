@@ -62,10 +62,6 @@
         }
         lastReal = real;
       } else {
-        // Glide the smoothed head back to the true paused position instead of
-        // snapping: the play loop runs `cur` up to ~0.5s ahead of currentTime,
-        // so a hard reset reads as a backward jump. The decay loop keeps calling
-        // render() while the wave flattens, so this eases over the same frames.
         const real = audio.currentTime;
         cur = Math.abs(cur - real) < 0.01 ? real : cur + (real - cur) * 0.22;
         lastNow = 0;

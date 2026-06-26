@@ -32,3 +32,123 @@ export function smoothPath(points: Pt[]): string {
   const e = p[p.length - 1];
   return d + `L${r(e.x)},${r(e.y)}`;
 }
+
+type Seg = { cmd: string; nums: number[] };
+
+function parsePath(d: string): Seg[] {
+  const segs: Seg[] = [];
+  const cmdRe = /([MLQCTSAHVZ])([^MLQCTSAHVZ]*)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = cmdRe.exec(d))) {
+    const nums = (m[2].match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || []).map(Number);
+    segs.push({ cmd: m[1], nums });
+  }
+  return segs;
+}
+
+function offsetNums(cmd: string, nums: number[], dx: number, dy: number): number[] {
+  const c = cmd.toUpperCase();
+  if (cmd !== c || c === "Z") return nums;
+  const out = nums.slice();
+  if (c === "H") {
+    for (let i = 0; i < out.length; i++) out[i] += dx;
+    return out;
+  }
+  if (c === "V") {
+    for (let i = 0; i < out.length; i++) out[i] += dy;
+    return out;
+  }
+  if (c === "A") {
+    for (let i = 0; i + 6 < out.length; i += 7) {
+      out[i + 5] += dx;
+      out[i + 6] += dy;
+    }
+    return out;
+  }
+  for (let i = 0; i + 1 < out.length; i += 2) {
+    out[i] += dx;
+    out[i + 1] += dy;
+  }
+  return out;
+}
+
+function fmtSeg(cmd: string, nums: number[]): string {
+  const c = cmd.toUpperCase();
+  if (c === "Z") return cmd;
+  if (c === "H" || c === "V") return cmd + nums.map(r).join(" ");
+  if (c === "A") {
+    const groups: string[] = [];
+    for (let i = 0; i + 6 < nums.length; i += 7) {
+      const g = nums.slice(i, i + 7).map(r);
+      groups.push(`${g[0]} ${g[1]} ${g[2]} ${g[3]} ${g[4]} ${g[5]},${g[6]}`);
+    }
+    return cmd + groups.join(" ");
+  }
+  const pairs: string[] = [];
+  for (let i = 0; i + 1 < nums.length; i += 2)
+    pairs.push(`${r(nums[i])},${r(nums[i + 1])}`);
+  return cmd + pairs.join(" ");
+}
+
+export function translatePath(d: string, dx: number, dy: number): string {
+  return parsePath(d)
+    .map(({ cmd, nums }) => fmtSeg(cmd, offsetNums(cmd, nums, dx, dy)))
+    .join("");
+}
+
+export function pathBBox(d: string): { x: number; y: number; w: number; h: number } {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let cx = 0;
+  let cy = 0;
+  const add = (x: number, y: number) => {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  };
+  for (const { cmd, nums } of parsePath(d)) {
+    const c = cmd.toUpperCase();
+    const rel = cmd !== c;
+    if (c === "Z") continue;
+    if (c === "H") {
+      for (const n of nums) {
+        cx = rel ? cx + n : n;
+        add(cx, cy);
+      }
+      continue;
+    }
+    if (c === "V") {
+      for (const n of nums) {
+        cy = rel ? cy + n : n;
+        add(cx, cy);
+      }
+      continue;
+    }
+    if (c === "A") {
+      const bx = cx;
+      const by = cy;
+      for (let i = 0; i + 6 < nums.length; i += 7) {
+        const x = rel ? bx + nums[i + 5] : nums[i + 5];
+        const y = rel ? by + nums[i + 6] : nums[i + 6];
+        add(x, y);
+        cx = x;
+        cy = y;
+      }
+      continue;
+    }
+    const bx = cx;
+    const by = cy;
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      const x = rel ? bx + nums[i] : nums[i];
+      const y = rel ? by + nums[i + 1] : nums[i + 1];
+      add(x, y);
+      cx = x;
+      cy = y;
+    }
+  }
+  if (minX === Infinity) return { x: 0, y: 0, w: 0, h: 0 };
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}

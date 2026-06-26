@@ -48,8 +48,6 @@ export function isAssetOnly(text: string): boolean {
   return any && rest.trim() === "";
 }
 
-// A note that's "just a card" — only embedded assets, or a single bare URL —
-// drops the postit chrome and sizes to its content (image, player, link card).
 export function isCardOnly(text: string): boolean {
   return isAssetOnly(text) || isBareUrl(text);
 }

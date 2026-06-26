@@ -28,7 +28,9 @@
     type Camera,
     type FontKey,
   } from "$lib/board.svelte";
-  import { smoothPath, simplify } from "$lib/draw";
+  import { smoothPath, simplify, pathBBox } from "$lib/draw";
+  import UndoRedo from "$lib/components/UndoRedo.svelte";
+  import Cheatsheet from "$lib/components/Cheatsheet.svelte";
   import { assetKind, assetPath, isCardOnly } from "$lib/assets";
   import { links } from "$lib/links.svelte";
   import { safeExternal } from "$lib/links";
@@ -37,9 +39,12 @@
 
   let trashEl = $state<HTMLDivElement | null>(null);
   let searchOpen = $state(false);
+  let helpOpen = $state(false);
   let editingId = $state<string | null>(null);
   let selectedIds = $state(new Set<string>());
+  let selectedStrokeIds = $state(new Set<string>());
   let dragId = $state<string | null>(null);
+  let dragging = $state(false);
   let trashHot = $state(false);
   let panning = $state(false);
   let marquee = $state<{ x0: number; y0: number; x1: number; y1: number } | null>(
@@ -48,10 +53,37 @@
   let spaceHeld = $state(false);
   let attach = $state<{ open: () => void } | null>(null);
 
-  const selectOne = (id: string) => (selectedIds = new Set([id]));
+  const selectOne = (id: string) => {
+    selectedIds = new Set([id]);
+    if (selectedStrokeIds.size) selectedStrokeIds = new Set();
+  };
   const clearSelection = () => {
     if (selectedIds.size) selectedIds = new Set();
+    if (selectedStrokeIds.size) selectedStrokeIds = new Set();
   };
+
+  function selectionBBox(): { x0: number; y0: number; x1: number; y1: number } | null {
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
+    for (const n of board.notes)
+      if (selectedIds.has(n.id)) {
+        x0 = Math.min(x0, n.x);
+        y0 = Math.min(y0, n.y);
+        x1 = Math.max(x1, n.x + n.w);
+        y1 = Math.max(y1, n.y + n.h);
+      }
+    for (const s of board.strokes)
+      if (selectedStrokeIds.has(s.id)) {
+        const b = pathBBox(s.d);
+        x0 = Math.min(x0, b.x);
+        y0 = Math.min(y0, b.y);
+        x1 = Math.max(x1, b.x + b.w);
+        y1 = Math.max(y1, b.y + b.h);
+      }
+    return x0 === Infinity ? null : { x0, y0, x1, y1 };
+  }
 
   let mode = $state<"normal" | "draw">("normal");
   let drawTool = $state<"pen" | "eraser">("pen");
@@ -89,6 +121,11 @@
   }
 
   let dragNotes: Note[] = [];
+  let dragStrokeIds: string[] = [];
+  let dragIsSingle = false;
+  let movedDx = 0;
+  let movedDy = 0;
+  let suppressClick = false;
   let last = { x: 0, y: 0 };
   let raf: number | null = null;
 
@@ -337,9 +374,6 @@
     animateCamera({ x: cx - w.x * ns, y: cy - w.y * ns, scale: ns });
   }
 
-  // The world bounding box of everything on the board — notes plus committed ink
-  // (strokes carry only their SVG path, so we read their bbox off the rendered
-  // paths, which are in world units). Null when the board is empty.
   function contentBBox(): { x: number; y: number; w: number; h: number } | null {
     let minX = Infinity,
       minY = Infinity,
@@ -363,7 +397,6 @@
           if (b.x + b.width > maxX) maxX = b.x + b.width;
           if (b.y + b.height > maxY) maxY = b.y + b.height;
         } catch {
-          /* detached/empty path */
         }
       }
     }
@@ -371,7 +404,6 @@
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   }
 
-  // Glide the camera so a world box fills ~85% of the viewport, centered.
   function fitBox(b: { x: number; y: number; w: number; h: number }) {
     const bw = Math.max(b.w, 1);
     const bh = Math.max(b.h, 1);
@@ -389,7 +421,6 @@
     });
   }
 
-  // Zoom-to-fit everything (⇧1). Empty board falls back to a plain reset.
   function fitView() {
     commitEdit();
     const b = contentBBox();
@@ -397,7 +428,6 @@
     fitBox(b);
   }
 
-  // Zoom-to-fit the selection (⇧2) — one note or many — else everything.
   function fitSelection() {
     const sel = board.notes.filter((n) => selectedIds.has(n.id));
     if (!sel.length) return fitView();
@@ -415,8 +445,6 @@
     fitBox({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
   }
 
-  // Minimap recenter: snap (no tween) so dragging the viewport rect tracks the
-  // pointer 1:1. `world` is the point the user wants at the viewport center.
   function jumpTo(world: { x: number; y: number }) {
     stopTween();
     const s = board.camera.scale;
@@ -435,8 +463,6 @@
     searchOpen = true;
   }
 
-  // Search result chosen: center the note at a readable scale and select it (no
-  // edit mode — just "you are here"). The note pulses via its selected ring.
   function flyToNote(id: string) {
     searchOpen = false;
     const n = board.notes.find((x) => x.id === id);
@@ -454,9 +480,6 @@
   }
 
   function onWheel(e: WheelEvent) {
-    // locked while a media is fullscreen / a postit is being edited — otherwise
-    // you'd pan the canvas out from under the thing you're focused on. Bail
-    // before preventDefault so a long note's textarea can still scroll natively.
     if (spotlightId !== null) return;
     e.preventDefault();
     stopTween();
@@ -483,16 +506,9 @@
     }
   }
 
-  // ---- assets: paste / drop / pick -> save bytes -> markdown ref in a note ----
-  // Media embeds inline (`![name](…)`); anything else becomes a click-to-open
-  // file link (`[name](…)`). The original filename rides along so audio/video
-  // tiles can label themselves. Backend just hashes bytes — type-agnostic.
-  const randomColor = () => COLORS[Math.floor(Math.random() * COLORS.length)];
+  const randomColor =() => COLORS[Math.floor(Math.random() * COLORS.length)];
 
-  // Cap intake: a whole file is read into memory before it hits disk, so an
-  // unbounded drop (a multi-GB .dmg/.iso) would exhaust RAM. Reject early with a
-  // visible message instead of crashing.
-  const MAX_ASSET_BYTES = 100 * 1024 * 1024;
+  const MAX_ASSET_BYTES =100 * 1024 * 1024;
   const MB = (n: number) => Math.round(n / (1024 * 1024));
 
   function acceptable(files: File[]): File[] {
@@ -535,8 +551,6 @@
     );
   }
 
-  // Native clipboard peek (the web `paste` event only fires on ⌘V). Returns the
-  // clipboard image handle, or null when the clipboard holds no image.
   async function clipboardImage(): Promise<Image | null> {
     try {
       return await readImage();
@@ -583,7 +597,7 @@
         if (f) files.push(f);
       }
     }
-    if (!files.length) return; // no file -> let normal text paste run
+    if (!files.length) return;
     e.preventDefault();
     const ok = acceptable(files);
     if (!ok.length) return;
@@ -634,7 +648,6 @@
     ) as HTMLElement | null;
 
     if (!noteEl) {
-      // empty canvas: offer Paste only when the clipboard holds an image
       menu = null;
       pasteMenu = null;
       const cx = e.clientX;
@@ -679,8 +692,16 @@
     menu = null;
   }
 
+  function onClickCapture(e: MouseEvent) {
+    if (suppressClick) {
+      e.stopPropagation();
+      e.preventDefault();
+      suppressClick = false;
+    }
+  }
+
   function onPointerDown(e: PointerEvent) {
-    // middle-mouse drag pans from anywhere (Figma/Miro/Excalidraw parity)
+    suppressClick = false;
     if (e.button === 1) {
       e.preventDefault();
       menu = null;
@@ -697,11 +718,8 @@
     const target = e.target as HTMLElement;
     const noteEl = target.closest("[data-note]") as HTMLElement | null;
 
-    // interactive bits inside a note (markdown checkboxes) own their pointer:
-    // let the native control handle the click — never drag/select/edit the note.
     if (target.closest("[data-interactive]")) return;
 
-    // draw mode: a drag paints ink or erases whole strokes (dock keeps clicks).
     if (mode === "draw") {
       if (target.closest("[data-ui]")) return;
       if (drawTool === "eraser") startErase(e);
@@ -709,15 +727,11 @@
       return;
     }
 
-    // while a media note is zoomed in, clicks land like a lightbox: inside it
-    // reaches its own controls, anything else dismisses the zoom.
     if (focusedId) {
       if (noteEl?.dataset.note !== focusedId) unfocusMedia();
       return;
     }
 
-    // while editing, a click outside the note leaves edit mode and glides the
-    // view home; a click inside falls through to the textarea (cursor placement).
     if (editingId) {
       if (noteEl?.dataset.note !== editingId) {
         exitEdit();
@@ -726,7 +740,6 @@
       return;
     }
 
-    // space-drag pans the board from anywhere — even over a note (Figma parity).
     if (spaceHeld) {
       commitEdit();
       stopTween();
@@ -738,7 +751,6 @@
     if (noteEl) {
       const id = noteEl.dataset.note!;
       if (id === editingId) return;
-      // media player controls own their own pointer — never drag/select the note
       if (target.closest(".audio-ctl, .vid-ctl")) {
         const note = board.notes.find((n) => n.id === id);
         if (note) board.bringToFront(note);
@@ -748,22 +760,45 @@
       const note = board.notes.find((n) => n.id === id);
       if (!note) return;
       board.bringToFront(note);
+      board.bringToFront(note);
       dragId = id;
-      dragNotes =
-        selectedIds.has(id) && selectedIds.size > 1
-          ? board.notes.filter((n) => selectedIds.has(n.id))
-          : [note];
+      dragging = true;
+      const grouped =
+        selectedIds.has(id) &&
+        (selectedIds.size > 1 || selectedStrokeIds.size > 0);
+      dragNotes = grouped
+        ? board.notes.filter((n) => selectedIds.has(n.id))
+        : [note];
+      dragStrokeIds = grouped ? [...selectedStrokeIds] : [];
+      dragIsSingle = !grouped;
       pressId = id;
       pressTarget = target;
       pressMoved = false;
+      movedDx = 0;
+      movedDy = 0;
       pressStart = { x: e.clientX, y: e.clientY };
       last = { x: e.clientX, y: e.clientY };
     } else if (!target.closest("[data-ui]")) {
       commitEdit();
       stopTween();
-      clearSelection();
-      marquee = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
-      last = { x: e.clientX, y: e.clientY };
+      const w = toWorld(e.clientX, e.clientY);
+      const bb = selectionBBox();
+      if (bb && w.x >= bb.x0 && w.x <= bb.x1 && w.y >= bb.y0 && w.y <= bb.y1) {
+        dragId = null;
+        dragging = true;
+        dragNotes = board.notes.filter((n) => selectedIds.has(n.id));
+        dragStrokeIds = [...selectedStrokeIds];
+        dragIsSingle = false;
+        pressMoved = false;
+        movedDx = 0;
+        movedDy = 0;
+        pressStart = { x: e.clientX, y: e.clientY };
+        last = { x: e.clientX, y: e.clientY };
+      } else {
+        clearSelection();
+        marquee = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
+        last = { x: e.clientX, y: e.clientY };
+      }
     }
   }
 
@@ -784,18 +819,24 @@
       extendErase(e);
       return;
     }
-    // recover if the button was released outside the window
-    if ((dragId || panning || marquee) && e.buttons === 0) {
+    if (
+      (dragId ||
+        panning ||
+        marquee ||
+        dragNotes.length ||
+        dragStrokeIds.length) &&
+      e.buttons === 0
+    ) {
       endInteraction();
       return;
     }
-    if (dragId && dragNotes.length) {
+    if (dragNotes.length || dragStrokeIds.length) {
       if (
         !pressMoved &&
         Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) > 4
       ) {
         pressMoved = true;
-        if (dragNotes.length === 1) selectOne(dragId);
+        if (dragIsSingle && dragId) selectOne(dragId);
         last = { x: e.clientX, y: e.clientY };
       }
       if (!pressMoved) return;
@@ -805,6 +846,10 @@
         n.x += dx;
         n.y += dy;
       }
+      if (dragStrokeIds.length)
+        board.translateStrokes(new Set(dragStrokeIds), dx, dy);
+      movedDx += dx;
+      movedDy += dy;
       last = { x: e.clientX, y: e.clientY };
       trashHot = overTrash(e.clientX, e.clientY);
     } else if (marquee) {
@@ -821,6 +866,13 @@
           hit.add(n.id);
       }
       selectedIds = hit;
+      const hitStrokes = new Set<string>();
+      for (const s of board.strokes) {
+        const sb = pathBBox(s.d);
+        if (sb.x < rx1 && sb.x + sb.w > rx0 && sb.y < ry1 && sb.y + sb.h > ry0)
+          hitStrokes.add(s.id);
+      }
+      selectedStrokeIds = hitStrokes;
     } else if (panning) {
       board.camera = {
         ...board.camera,
@@ -833,7 +885,10 @@
 
   function endInteraction() {
     dragId = null;
+    dragging = false;
     dragNotes = [];
+    dragStrokeIds = [];
+    dragIsSingle = false;
     pressId = null;
     pressTarget = null;
     pressMoved = false;
@@ -851,19 +906,30 @@
       finishErase();
       return;
     }
-    if (dragId && trashHot) {
-      const ids = dragNotes.length > 1 ? dragNotes.map((n) => n.id) : [dragId];
-      for (const id of ids) board.remove(id);
-      if (ids.some((id) => selectedIds.has(id)))
-        selectedIds = new Set([...selectedIds].filter((id) => !ids.includes(id)));
+    const dragging = dragNotes.length > 0 || dragStrokeIds.length > 0;
+    if (dragging && pressMoved) suppressClick = true;
+    if (dragging && trashHot) {
+      if (dragNotes.length)
+        board.deleteNotes(new Set(dragNotes.map((n) => n.id)));
+      if (dragStrokeIds.length) {
+        const removed = board.removeStrokes(new Set(dragStrokeIds));
+        board.commitErase(removed);
+      }
+      selectedIds = new Set();
+      selectedStrokeIds = new Set();
+    } else if (dragging && pressMoved) {
+      board.pushMove(
+        dragNotes.map((n) => n.id),
+        dragStrokeIds,
+        movedDx,
+        movedDy,
+      );
     } else if (dragId && !pressMoved) {
       activate(dragId, pressTarget);
     }
     endInteraction();
   }
 
-  // First click selects; clicking an already-selected note acts on it — open a
-  // file, zoom an image/video, or (for a plain note) drop into edit mode.
   function activate(id: string, target: HTMLElement | null) {
     const wasSelected = selectedIds.has(id) && selectedIds.size === 1;
     selectOne(id);
@@ -875,7 +941,6 @@
     const chip = target?.closest(".note-file") as HTMLElement | null;
     if (chip?.dataset.asset) return openAsset(chip.dataset.asset);
 
-    // link cards (bookmark or YouTube facade) handle their own click
     if (target?.closest(".link")) return;
 
     const media = target?.closest(
@@ -883,7 +948,7 @@
     ) as HTMLElement | null;
     if (media) return focusMedia(note, media);
 
-    if (isCardOnly(note.text)) return; // bare media/link with no hit — nothing to do
+    if (isCardOnly(note.text)) return;
 
     board.bringToFront(note);
     focusNote(note);
@@ -910,18 +975,12 @@
     openPath(assetPath(raw)).catch(() => {});
   }
 
-  // Zoom the board so the clicked media fills the view — the same camera move a
-  // postit makes on edit — and mark it focused so every other note blurs back.
-  // The element never moves; only the camera does. prevCamera is the way home.
   function focusMedia(note: Note, el: HTMLElement) {
     prevCamera = { ...board.camera };
     board.bringToFront(note);
     selectOne(note.id);
     focusedId = note.id;
 
-    // Fit the media's own box (fall back to the whole note) into ~84% of the
-    // viewport, then center it. rect is in screen px, so divide out the current
-    // scale to recover world units before computing the target scale.
     let cx = note.x + note.w / 2;
     let cy = note.y + note.h / 2;
     let ww = note.w;
@@ -949,7 +1008,6 @@
 
   function unfocusMedia() {
     if (!focusedId) return;
-    // pause whatever was playing so audio doesn't linger after the zoom-out
     document
       .querySelector(`[data-note="${focusedId}"]`)
       ?.querySelectorAll("video, audio")
@@ -961,8 +1019,6 @@
 
   function onKeyDown(e: KeyboardEvent) {
     const meta = e.metaKey || e.ctrlKey;
-    // ⌘/Ctrl-K toggles search from anywhere; while it's open the palette owns
-    // every other key (arrows / Enter / Escape), so bail out here.
     if (searchOpen) {
       if (meta && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
@@ -970,18 +1026,37 @@
       }
       return;
     }
+    if (helpOpen) {
+      if (e.key === "Escape" || e.key === "?") {
+        e.preventDefault();
+        helpOpen = false;
+      }
+      return;
+    }
+    if (e.key === "?" && editingId === null) {
+      e.preventDefault();
+      helpOpen = true;
+      return;
+    }
     if (meta && (e.key === "k" || e.key === "K")) {
       e.preventDefault();
       openSearch();
       return;
     }
-    // hold Space to pan — the pan itself starts on pointerdown; here we just
-    // record intent (and never while typing in a note).
+    if (editingId === null && meta && (e.key === "z" || e.key === "Z")) {
+      e.preventDefault();
+      if (e.shiftKey) board.redo();
+      else board.undo();
+      return;
+    }
+    if (editingId === null && meta && (e.key === "y" || e.key === "Y")) {
+      e.preventDefault();
+      board.redo();
+      return;
+    }
     if (e.code === "Space" && editingId === null && !e.repeat) {
       spaceHeld = true;
     }
-    // ⇧1 fit everything, ⇧2 fit selection — but not while typing in a note
-    // (e.code is layout-independent, so this survives the Shift+digit remap).
     if (editingId === null && e.shiftKey && e.code === "Digit1") {
       e.preventDefault();
       fitView();
@@ -992,23 +1067,22 @@
       fitSelection();
       return;
     }
-    // Backspace / Delete removes the whole selection (never while editing or
-    // zoomed into a media note).
     if (
       (e.key === "Backspace" || e.key === "Delete") &&
       editingId === null &&
       focusedId === null &&
       mode === "normal" &&
-      selectedIds.size
+      (selectedIds.size || selectedStrokeIds.size)
     ) {
       e.preventDefault();
-      for (const id of selectedIds) board.remove(id);
+      if (selectedIds.size) board.deleteNotes(selectedIds);
+      if (selectedStrokeIds.size)
+        board.commitErase(board.removeStrokes(selectedStrokeIds));
       selectedIds = new Set();
+      selectedStrokeIds = new Set();
       return;
     }
-    // single-key tools & zoom — not while typing, zoomed into media, or holding ⌘/Ctrl
     if (editingId === null && focusedId === null && !meta) {
-      // zoom: `=`/`+` in, `-`/`_` out (repeat-friendly so holding works)
       if (e.key === "=" || e.key === "+") {
         e.preventDefault();
         zoomBy(1.25);
@@ -1019,15 +1093,12 @@
         zoomBy(1 / 1.25);
         return;
       }
-      // D toggles draw mode; ignore auto-repeat so a held key doesn't thrash
       if (!e.repeat && (e.key === "d" || e.key === "D")) {
         e.preventDefault();
         if (mode === "draw") exitDraw();
         else enterDraw();
         return;
       }
-      // T new text note, F pick a file, 1–6 a colored note — normal canvas only.
-      // 1–6 require NO Shift, so ⇧1/⇧2 stay reserved for zoom-to-fit.
       if (!e.repeat && mode === "normal") {
         if (e.key === "t" || e.key === "T") {
           e.preventDefault();
@@ -1047,10 +1118,8 @@
         }
       }
     }
-    // draw mode owns Escape (leave the tool) and ⌘/Ctrl-Z undo/redo
     if (mode === "draw") {
       if (e.key === "Escape") {
-        // a gesture in progress cancels first; a second Escape leaves the tool
         if (erasePointer !== null || drawingPointer !== null) {
           cancelErase();
           cancelStroke();
@@ -1059,21 +1128,8 @@
         }
         return;
       }
-      const meta = e.metaKey || e.ctrlKey;
-      if (meta && (e.key === "z" || e.key === "Z")) {
-        e.preventDefault();
-        if (e.shiftKey) board.redoStroke();
-        else board.undoStroke();
-        return;
-      }
-      if (meta && (e.key === "y" || e.key === "Y")) {
-        e.preventDefault();
-        board.redoStroke();
-        return;
-      }
     }
     if (e.key === "Escape") {
-      // a zoomed-in media note dismisses first, restoring the prior view
       if (focusedId) {
         unfocusMedia();
         return;
@@ -1092,7 +1148,6 @@
     if (e.code === "Space") spaceHeld = false;
   }
 
-  // ---- live file sync ----
   onMount(() => {
     let unlisten: Array<() => void> = [];
     (async () => {
@@ -1135,7 +1190,6 @@
     return () => unlisten.forEach((u) => u());
   });
 
-  // ---- persist changed notes to disk (debounced diff) ----
   $effect(() => {
     const snap = board.notes.map(
       (n) => [n.id, JSON.stringify(n)] as [string, string],
@@ -1152,9 +1206,7 @@
     }, 300);
   });
 
-  // ---- dotted grid (canvas, GPU-friendly: zoom is a pattern transform,
-  //      not a per-frame gradient re-rasterization, so it never shimmers) ----
-  let gridCanvas = $state<HTMLCanvasElement | null>(null);
+  let gridCanvas =$state<HTMLCanvasElement | null>(null);
   let gridCtx: CanvasRenderingContext2D | null = null;
   let dotTile: HTMLCanvasElement | null = null;
   let dotPattern: CanvasPattern | null = null;
@@ -1225,17 +1277,6 @@
     return () => window.removeEventListener("resize", resizeGrid);
   });
 
-  // Pan with a GPU transform (cheap, smooth); scale the world separately. The two
-  // scaling methods fail in opposite directions, so we pick by direction:
-  //   • zoom in (s >= 1): `zoom` re-rasterizes vectors during layout -> crisp.
-  //     transform:scale would upscale a cached bitmap -> mushy text/corners.
-  //   • zoom out (s < 1): `transform:scale` downsamples a full-res bitmap ->
-  //     crisp AND keeps ratios uniform. `zoom` instead hits WebKit's minimum
-  //     font-size floor, so text refuses to shrink while cards/controls keep
-  //     shrinking -> text looks oversized when zoomed out.
-  // Geometry is identical either way (screen = cam + world*scale) and the two
-  // coincide at s=1, so the crossover is seamless and toWorld/grid/focus are
-  // unchanged.
   const panStyle = $derived(
     `transform:translate(${board.camera.x}px,${board.camera.y}px);`,
   );
@@ -1245,9 +1286,7 @@
       : `transform:scale(${board.camera.scale});`,
   );
   const zoomPct = $derived(Math.round(board.camera.scale * 100));
-  // the note the view is zoomed onto — a fullscreen media OR a postit in edit
-  // mode. Everything else blurs back around it. The two are mutually exclusive.
-  const spotlightId = $derived(focusedId ?? editingId);
+  const spotlightId =$derived(focusedId ?? editingId);
   const menuAssetOnly = $derived(
     !!menu &&
       isCardOnly(board.notes.find((n) => n.id === menu!.id)?.text ?? ""),
@@ -1258,6 +1297,7 @@
   onpointermove={onPointerMove}
   onpointerup={onPointerUp}
   onpointercancel={endInteraction}
+  onclickcapture={onClickCapture}
   onkeydown={onKeyDown}
   onkeyup={onKeyUp}
   onblur={() => (spaceHeld = false)}
@@ -1288,6 +1328,7 @@
         liveColor={drawColor}
         liveWidth={drawWidth / board.camera.scale}
         marks={eraseMarks}
+        selected={selectedStrokeIds}
       />
       {#each board.notes as note (note.id)}
         <Postit
@@ -1322,7 +1363,7 @@
     </div>
   {/if}
 
-  <Trash bind:el={trashEl} hot={trashHot} armed={dragId !== null} />
+  <Trash bind:el={trashEl} hot={trashHot} armed={dragging} />
 
   <div class="dock" class:concealed={focusedId !== null} data-ui>
     {#if mode === "draw"}
@@ -1347,18 +1388,6 @@
           onwidth={(w) => (drawWidth = w)}
         />
       {/if}
-      <CircleButton title="Undo" kbd="⌘Z" onclick={() => board.undoStroke()} disabled={!board.canUndo}>
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 14 4 9l5-5" />
-          <path d="M4 9h11a6 6 0 0 1 0 12h-4" />
-        </svg>
-      </CircleButton>
-      <CircleButton title="Redo" kbd="⇧⌘Z" onclick={() => board.redoStroke()} disabled={!board.canRedo}>
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="m15 14 5-5-5-5" />
-          <path d="M20 9H9a6 6 0 0 0 0 12h4" />
-        </svg>
-      </CircleButton>
       <CircleButton title="Done" kbd="Esc" onclick={exitDraw}>
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M20 6 9 17l-5-5" />
@@ -1396,7 +1425,20 @@
     onJump={jumpTo}
     hidden={spotlightId !== null}
   />
+
+  <UndoRedo
+    canUndo={board.canUndo}
+    canRedo={board.canRedo}
+    onundo={() => board.undo()}
+    onredo={() => board.redo()}
+    shifted={dragging}
+    hidden={focusedId !== null}
+  />
 </main>
+
+{#if helpOpen}
+  <Cheatsheet onclose={() => (helpOpen = false)} />
+{/if}
 
 {#if searchOpen}
   <SearchPalette notes={board.notes} onpick={flyToNote} onclose={() => (searchOpen = false)} />
@@ -1496,9 +1538,6 @@
     font-weight: 600;
     line-height: 1;
   }
-  /* sits above the grid, below the notes: softly blurs the paper so a focused
-     media note (and its own neighbours, which blur themselves) float on a calm
-     backdrop. Blur only — no dim. Fades in/out with the camera zoom. */
   .dim {
     position: absolute;
     inset: 0;
@@ -1507,8 +1546,6 @@
     -webkit-backdrop-filter: blur(3px);
     backdrop-filter: blur(3px);
   }
-  /* the pan layer: a translate-only transform so dragging the canvas stays a
-     cheap GPU composite. The crisp scaling lives one level down on .world. */
   .pan {
     position: absolute;
     top: 0;
@@ -1560,7 +1597,6 @@
       opacity 0.3s var(--ease-soft),
       transform 0.3s var(--ease-soft);
   }
-  /* tuck the palette + attach dock away while a media note is zoomed in */
   .dock.concealed {
     opacity: 0;
     transform: translateX(-50%) translateY(16px);

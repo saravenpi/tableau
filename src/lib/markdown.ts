@@ -14,8 +14,6 @@ marked.use({
         checked ? " checked" : ""
       } />`;
     },
-    // Inline/autolinked URLs stay clickable. `data-interactive` keeps the canvas
-    // pointer logic from treating the click as a note drag; Postit opens the href.
     link({ href, text }) {
       const safe = (href ?? "").replace(/"/g, "%22");
       return `<a href="${safe}" class="md-link" data-interactive rel="noreferrer">${text ?? safe}</a>`;

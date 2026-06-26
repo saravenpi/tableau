@@ -7,11 +7,13 @@
     liveColor = "#43413b",
     liveWidth = 4,
     marks = new Set<string>(),
+    selected = new Set<string>(),
   }: {
     live?: Pt[];
     liveColor?: string;
     liveWidth?: number;
     marks?: Set<string>;
+    selected?: Set<string>;
   } = $props();
 
   const liveD = $derived(smoothPath(live));
@@ -19,6 +21,17 @@
 
 <svg class="draw-layer" aria-hidden="true">
   {#each board.strokes as s (s.id)}
+    {#if selected.has(s.id)}
+      <path
+        d={s.d}
+        stroke="var(--ink)"
+        stroke-width={s.width + 7}
+        fill="none"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        opacity="0.3"
+      />
+    {/if}
     <path
       data-stroke-id={s.id}
       d={s.d}

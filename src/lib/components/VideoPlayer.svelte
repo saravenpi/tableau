@@ -98,6 +98,7 @@
     overflow: hidden;
     font-size: 0;
     line-height: 0;
+    cursor: inherit;
   }
   .note-media {
     display: block;

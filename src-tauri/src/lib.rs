@@ -102,9 +102,6 @@ struct SyncState {
     ztop: Mutex<f64>,
 }
 
-// A real http origin for the YouTube embed: WKWebView drops the Referer for the
-// custom tauri:// scheme, so youtube returns "Error 153". Hosting the iframe from
-// a loopback http server gives it a valid origin and the embed validates.
 struct YtPort(u16);
 
 fn valid_video_id(id: &str) -> bool {
@@ -221,8 +218,6 @@ fn load_config_folder() -> PathBuf {
     default_folder
 }
 
-// Optional privacy switch in ~/.toile.yml (`unfurl: false`) to stop link previews
-// from reaching out to the network. Defaults on.
 fn config_unfurl() -> bool {
     let home = match dirs::home_dir() {
         Some(h) => h,
@@ -410,10 +405,6 @@ fn save_links(data: String, state: State<Arc<SyncState>>) -> Result<(), String> 
     std::fs::write(&path, data).map_err(|e| e.to_string())
 }
 
-// ---- link previews: the Tauri core is the (local) unfurl crawler. It fetches
-// server-side (no webview CORS) and caches preview images to disk so cards work
-// offline. Every hop is SSRF-validated before we connect. ----
-
 fn ip_blocked(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v) => {
@@ -429,14 +420,12 @@ fn ip_blocked(ip: &IpAddr) -> bool {
             v.is_loopback()
                 || v.is_unspecified()
                 || v.is_multicast()
-                || (v.segments()[0] & 0xffc0) == 0xfe80 // link-local
-                || (v.segments()[0] & 0xfe00) == 0xfc00 // unique local
+                || (v.segments()[0] & 0xffc0) == 0xfe80
+                || (v.segments()[0] & 0xfe00) == 0xfc00
         }
     }
 }
 
-// Resolve the host and reject if it maps to a loopback/private/link-local address
-// (the cloud-metadata endpoint 169.254.169.254 is link-local, so it's covered).
 async fn validate(url_str: &str) -> Result<Url, String> {
     let u = Url::parse(url_str).map_err(|e| e.to_string())?;
     if !matches!(u.scheme(), "http" | "https") {
@@ -472,8 +461,6 @@ fn http_client() -> Result<Client, String> {
         .map_err(|e| e.to_string())
 }
 
-// Manual redirect following so every hop is re-validated (an open redirect to
-// 127.0.0.1 is the classic SSRF bypass).
 async fn get_validated(client: &Client, start: &str, max: u32) -> Result<reqwest::Response, String> {
     let mut current = start.to_string();
     for _ in 0..=max {

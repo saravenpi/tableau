@@ -105,9 +105,6 @@
 
   function onPointerMove(e: PointerEvent): void {
     if (!dragging) return;
-    // Recover from a missed pointerup (e.g. released outside the window). The
-    // pointer capture would otherwise keep routing EVERY move here and pan the
-    // camera "by itself" toward wherever the cursor is. Bail before jumping.
     if (e.buttons === 0) {
       endDrag(e);
       return;

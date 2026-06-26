@@ -66,9 +66,6 @@
   const fileName = (label: string, raw: string) =>
     label.trim() || (raw.split("/").pop() ?? raw);
 
-  // A run of plain text between asset refs: any line that is *only* a URL becomes
-  // a rich link card; the surrounding prose stays text (marked autolinks inline
-  // URLs there). This is the "bare URL on its own line → card" convention.
   function pushText(out: Segment[], chunk: string) {
     let buf: string[] = [];
     const flush = () => {
@@ -212,8 +209,6 @@
       0 22px 46px rgba(40, 38, 32, 0.2);
   }
 
-  /* selection ring — outline (not box-shadow) so it survives the hover/drag
-     shadow swaps, and shows on every selected note during a marquee drag. */
   .note.selected .inner {
     outline: 2px solid var(--ink);
     outline-offset: 2px;
@@ -375,9 +370,6 @@
     appearance: none;
     -webkit-appearance: none;
     position: absolute;
-    /* form controls don't inherit font-size, so without this the box's `em`
-       units resolve against the UA default (~13px), not the note's 19px —
-       which shrank it and threw off both axes. */
     font-size: inherit;
     left: 0.18em;
     top: 0.275em;
@@ -421,7 +413,6 @@
     -webkit-user-drag: none;
   }
 
-  /* asset-only note: no card, the asset renders as its own component */
   .note.asset-only {
     height: auto !important;
   }

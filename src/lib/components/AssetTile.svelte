@@ -16,8 +16,6 @@
   } = $props();
 
   const src = $derived(resolveAssetSrc(raw));
-  // Only hand video/audio to a player for formats this webview decodes; anything
-  // else — and anything that errors at runtime — falls through to an open card.
   const playable = $derived(inlinePlayable(raw));
   let failed = $state(false);
 </script>

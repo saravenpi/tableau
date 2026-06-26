@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { translatePath } from "./draw";
 
 export type Note = {
   id: string;
@@ -16,7 +17,18 @@ export type FontKey = "sans" | "serif" | "mono";
 
 export type Stroke = { id: string; color: string; width: number; d: string };
 
-type StrokeOp = { type: "add" | "erase"; strokes: Stroke[] };
+type UndoOp =
+  | { kind: "strokeAdd"; strokes: Stroke[] }
+  | { kind: "strokeErase"; strokes: Stroke[] }
+  | { kind: "noteAdd"; notes: Note[] }
+  | { kind: "noteDelete"; notes: Note[] }
+  | {
+      kind: "move";
+      noteIds: string[];
+      strokeIds: string[];
+      dx: number;
+      dy: number;
+    };
 
 export type Camera = { x: number; y: number; scale: number };
 
@@ -48,8 +60,8 @@ class Board {
   folder = $state("");
   unfurl = $state(true);
   #zTop = 1;
-  #undo = $state<StrokeOp[]>([]);
-  #redo = $state<StrokeOp[]>([]);
+  #undo = $state<UndoOp[]>([]);
+  #redo = $state<UndoOp[]>([]);
   #strokeTimer: ReturnType<typeof setTimeout> | undefined;
 
   async init(): Promise<void> {
@@ -92,6 +104,7 @@ class Board {
     };
     this.notes.push(note);
     this.writeNote(note.id);
+    this.#push({ kind: "noteAdd", notes: [note] });
     return note;
   }
 
@@ -102,13 +115,38 @@ class Board {
     return this.#redo.length > 0;
   }
 
+  #push(op: UndoOp): void {
+    this.#undo.push(op);
+    this.#redo = [];
+  }
+
   addStroke(d: string, color: string, width: number): void {
     if (!d) return;
     const s: Stroke = { id: uid(), color, width, d };
     this.strokes.push(s);
-    this.#undo.push({ type: "add", strokes: [s] });
-    this.#redo = [];
+    this.#push({ kind: "strokeAdd", strokes: [s] });
     this.#saveStrokes();
+  }
+
+  translateStrokes(ids: Set<string>, dx: number, dy: number): void {
+    if (!ids.size || (!dx && !dy)) return;
+    this.strokes = this.strokes.map((s) =>
+      ids.has(s.id) ? { ...s, d: translatePath(s.d, dx, dy) } : s,
+    );
+    this.#saveStrokes();
+  }
+
+  pushMove(noteIds: string[], strokeIds: string[], dx: number, dy: number): void {
+    if ((!dx && !dy) || (!noteIds.length && !strokeIds.length)) return;
+    this.#push({ kind: "move", noteIds, strokeIds, dx, dy });
+  }
+
+  deleteNotes(ids: Set<string>): void {
+    const notes = this.notes.filter((n) => ids.has(n.id));
+    if (!notes.length) return;
+    this.notes = this.notes.filter((n) => !ids.has(n.id));
+    for (const id of ids) invoke("delete_note", { id }).catch(() => {});
+    this.#push({ kind: "noteDelete", notes });
   }
 
   removeStrokes(ids: Set<string>): Stroke[] {
@@ -123,34 +161,71 @@ class Board {
 
   commitErase(removed: Stroke[]): void {
     if (!removed.length) return;
-    this.#undo.push({ type: "erase", strokes: removed });
-    this.#redo = [];
+    this.#push({ kind: "strokeErase", strokes: removed });
   }
 
-  #apply(op: StrokeOp, forward: boolean): void {
-    const adding = (op.type === "add") === forward;
-    if (adding) {
-      this.strokes.push(...op.strokes);
-    } else {
-      const ids = new Set(op.strokes.map((s) => s.id));
-      this.strokes = this.strokes.filter((s) => !ids.has(s.id));
+  #addStrokes(strokes: Stroke[]): void {
+    this.strokes.push(...strokes);
+    this.#saveStrokes();
+  }
+  #dropStrokes(strokes: Stroke[]): void {
+    const ids = new Set(strokes.map((s) => s.id));
+    this.strokes = this.strokes.filter((s) => !ids.has(s.id));
+    this.#saveStrokes();
+  }
+  #addNotes(notes: Note[]): void {
+    this.notes.push(...notes);
+    for (const n of notes) this.writeNote(n.id);
+  }
+  #dropNotes(notes: Note[]): void {
+    const ids = new Set(notes.map((n) => n.id));
+    this.notes = this.notes.filter((n) => !ids.has(n.id));
+    for (const id of ids) invoke("delete_note", { id }).catch(() => {});
+  }
+
+  #applyOp(op: UndoOp, forward: boolean): void {
+    switch (op.kind) {
+      case "strokeAdd":
+        forward ? this.#addStrokes(op.strokes) : this.#dropStrokes(op.strokes);
+        break;
+      case "strokeErase":
+        forward ? this.#dropStrokes(op.strokes) : this.#addStrokes(op.strokes);
+        break;
+      case "noteAdd":
+        forward ? this.#addNotes(op.notes) : this.#dropNotes(op.notes);
+        break;
+      case "noteDelete":
+        forward ? this.#dropNotes(op.notes) : this.#addNotes(op.notes);
+        break;
+      case "move": {
+        const sign = forward ? 1 : -1;
+        const dx = op.dx * sign;
+        const dy = op.dy * sign;
+        const nids = new Set(op.noteIds);
+        for (const n of this.notes)
+          if (nids.has(n.id)) {
+            n.x += dx;
+            n.y += dy;
+          }
+        if (op.strokeIds.length)
+          this.translateStrokes(new Set(op.strokeIds), dx, dy);
+        break;
+      }
     }
   }
 
-  undoStroke(): void {
+  undo(): void {
     const op = this.#undo.pop();
     if (!op) return;
-    this.#apply(op, false);
+    this.#applyOp(op, false);
     this.#redo.push(op);
-    this.#saveStrokes();
   }
 
-  redoStroke(): void {
+  redo(): void {
     const op = this.#redo.pop();
     if (!op) return;
-    this.#apply(op, true);
+    this.#applyOp(op, true);
     this.#undo.push(op);
-    this.#saveStrokes();
   }
 
   #saveStrokes(): void {

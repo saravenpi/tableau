@@ -1,8 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 
-// What the Rust `fetch_link_preview` command returns (camelCase via serde).
-// `image`/`favicon` are board-relative asset paths the backend already cached to
-// disk, so cards work offline and don't re-fetch the remote on every render.
 export type LinkMeta = {
   url: string;
   kind: "youtube" | "card" | "error";
@@ -15,9 +12,6 @@ export type LinkMeta = {
   videoId?: string | null;
 };
 
-// Metadata is fetched once and cached forever in `.toile-links.json`; the network
-// only gets hit again on an explicit refresh. Errors stay in memory only, so a
-// flaky connection retries next session instead of poisoning the card permanently.
 class LinkStore {
   cache = $state<Record<string, LinkMeta>>({});
   enabled = $state(true);
@@ -34,7 +28,6 @@ class LinkStore {
       const data = JSON.parse(await invoke<string>("load_links"));
       if (data && typeof data === "object") this.cache = data;
     } catch {
-      /* no cache yet */
     }
   }
 
@@ -42,8 +35,6 @@ class LinkStore {
     return this.cache[url];
   }
 
-  // Returns cached metadata, or queues a fetch and resolves when it lands. A no-op
-  // (resolves null) when previews are disabled and nothing is cached.
   ensure(url: string): Promise<LinkMeta | null> {
     const hit = this.cache[url];
     if (hit) return Promise.resolve(hit);
@@ -91,7 +82,6 @@ class LinkStore {
 
   #persist(): void {
     clearTimeout(this.#saveTimer);
-    // Don't persist transient errors — only real previews are worth caching.
     const keep = Object.fromEntries(
       Object.entries(this.cache).filter(([, m]) => m.kind !== "error"),
     );

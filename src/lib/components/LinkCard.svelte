@@ -7,12 +7,8 @@
 
   let { url }: { url: string } = $props();
 
-  // YouTube is detected client-side so the facade paints instantly, with no fetch
-  // on the critical path — the backend call only enriches it with a title.
   const vid = $derived(youtubeId(url));
 
-  // The embed is served from a loopback http origin (see the Rust yt proxy) so
-  // youtube sees a valid Referer; the tauri:// custom scheme drops it → Error 153.
   let ytPort = $state(0);
   $effect(() => {
     if (ytPort) return;
@@ -24,7 +20,23 @@
 
   let playing = $state(false);
 
-  // Fire the (queued, cached) preview fetch. No-op when cached or disabled.
+  let ytEl = $state<HTMLDivElement | null>(null);
+  let fw = $state(0);
+  let fh = $state(0);
+  $effect(() => {
+    const el = ytEl;
+    if (!el) return;
+    const measure = () => {
+      fw = el.clientWidth;
+      fh = el.clientHeight;
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+  const frameStyle = $derived(fw ? `width:${fw}px;height:${fh}px;` : "");
+
   $effect(() => {
     void url;
     links.ensure(url);
@@ -52,10 +64,9 @@
 </script>
 
 {#if vid}
-  <!-- facade: thumbnail + play button until clicked, then the real player.
-       not draggable once playing so the iframe owns its own pointer events. -->
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
+    bind:this={ytEl}
     class="link yt"
     class:playing
     data-link={url}
@@ -67,6 +78,7 @@
     {#if playing && ytSrc}
       <iframe
         class="yt-frame"
+        style={frameStyle}
         src={ytSrc}
         title={title || "YouTube video"}
         allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
@@ -105,8 +117,6 @@
     </div>
   </div>
 {:else}
-  <!-- loading skeleton, or the graceful fallback chip when previews are off /
-       the fetch failed: still a tidy, clickable link. -->
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div class="link chip" class:loading data-link={url} role="button" tabindex="-1" onclick={onClick}>
     {#if favicon}<img class="card-fav" src={favicon} alt="" draggable="false" />{/if}
@@ -120,12 +130,11 @@
     width: 100%;
     box-sizing: border-box;
     margin: 6px 0;
-    cursor: pointer;
+    cursor: inherit;
     -webkit-user-drag: none;
     user-select: none;
   }
 
-  /* ---- YouTube facade ---- */
   .yt {
     position: relative;
     aspect-ratio: 16 / 9;
@@ -134,6 +143,9 @@
     background: #000;
     box-shadow: inset 0 0 0 1px rgba(40, 38, 32, 0.12);
   }
+  .yt.playing {
+    cursor: default;
+  }
   .yt-thumb {
     width: 100%;
     height: 100%;
@@ -141,6 +153,9 @@
     display: block;
   }
   .yt-frame {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     border: 0;
@@ -183,7 +198,6 @@
     overflow: hidden;
   }
 
-  /* ---- bookmark card ---- */
   .card {
     display: flex;
     gap: 0;
@@ -255,7 +269,6 @@
     overflow: hidden;
   }
 
-  /* ---- compact chip (loading / fallback) ---- */
   .chip {
     display: flex;
     align-items: center;
